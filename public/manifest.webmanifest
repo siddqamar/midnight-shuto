@@ -1,0 +1,18 @@
+{
+  "name": "Midnight Shuto",
+  "short_name": "Shuto",
+  "description": "A browser-based Japanese open-world arcade driving game.",
+  "theme_color": "#080b12",
+  "background_color": "#080b12",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "start_url": "./",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

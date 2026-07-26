@@ -1,0 +1,23 @@
+{
+  "name": "midnight-shuto",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.app.json && vite build --configLoader runner",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json --pretty false",
+    "test:e2e": "node scripts/e2e.mjs"
+  },
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "three": "^0.181.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.181.0",
+    "playwright-core": "^1.62.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
+  }
+}

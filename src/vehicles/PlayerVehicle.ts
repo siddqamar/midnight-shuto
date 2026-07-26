@@ -1,0 +1,155 @@
+import * as CANNON from 'cannon-es';
+import * as THREE from 'three';
+import type { InputState, VehicleSpec, VehicleTelemetry } from '../core/types';
+import { clamp, damp } from '../utils/math';
+import { createCarModel, type CarModel } from './CarModel';
+
+export class PlayerVehicle {
+  readonly body: CANNON.Body;
+  readonly group: THREE.Group;
+  private model: CarModel;
+  private spec: VehicleSpec;
+  private wheelSpin = 0;
+  private steeringVisual = 0;
+  private lastInput: InputState = { throttle: 0, brake: 0, steering: 0, handbrake: false };
+  private speedForward = 0;
+  private slip = 0;
+  private onImpact?: (strength: number) => void;
+
+  constructor(world: CANNON.World, scene: THREE.Scene, spec: VehicleSpec, color: string) {
+    this.spec = spec;
+    this.group = new THREE.Group();
+    this.model = createCarModel(color, spec.accent);
+    this.group.add(this.model);
+    scene.add(this.group);
+
+    this.body = new CANNON.Body({
+      mass: 1180,
+      shape: new CANNON.Box(new CANNON.Vec3(1.02, 0.4, 2.16)),
+      position: new CANNON.Vec3(0, 0.62, 0),
+      linearDamping: 0.08,
+      angularDamping: 0.78,
+      material: new CANNON.Material({ friction: 0, restitution: 0.05 })
+    });
+    this.body.angularFactor.set(0, 1, 0);
+    this.body.allowSleep = false;
+    this.body.addEventListener('collide', (event: { contact: CANNON.ContactEquation }) => {
+      const impact = Math.abs(event.contact.getImpactVelocityAlongNormal());
+      if (impact > 2.8) this.onImpact?.(clamp(impact / 20, 0, 1));
+    });
+    world.addBody(this.body);
+    this.reset(0, 0, 0);
+  }
+
+  setImpactHandler(callback: (strength: number) => void): void {
+    this.onImpact = callback;
+  }
+
+  setSpec(spec: VehicleSpec, color: string): void {
+    this.spec = spec;
+    this.group.remove(this.model);
+    this.model = createCarModel(color, spec.accent);
+    this.group.add(this.model);
+  }
+
+  setColor(color: string): void {
+    this.model.userData.bodyMaterial.color.set(color);
+  }
+
+  prePhysics(dt: number, input: InputState, enabled: boolean): void {
+    this.lastInput = enabled ? input : { throttle: 0, brake: 0, steering: 0, handbrake: true };
+    const localForward = this.body.quaternion.vmult(new CANNON.Vec3(0, 0, 1));
+    const localRight = this.body.quaternion.vmult(new CANNON.Vec3(1, 0, 0));
+    const velocity = this.body.velocity;
+    this.speedForward = velocity.dot(localForward);
+    const lateralSpeed = velocity.dot(localRight);
+    this.slip = Math.abs(lateralSpeed) / Math.max(3, Math.abs(this.speedForward));
+
+    const normalizedSpeed = clamp(Math.abs(this.speedForward) / this.spec.topSpeed, 0, 1);
+    const movingForward = this.speedForward > 1.5;
+    const movingBackward = this.speedForward < -1.5;
+    let drive = 0;
+
+    if (this.lastInput.throttle > 0 && !movingBackward) drive += this.lastInput.throttle;
+    else if (this.lastInput.throttle > 0) this.applyLongitudinalBrake(0.9);
+    if (this.lastInput.brake > 0 && !movingForward) drive -= this.lastInput.brake * 0.58;
+    else if (this.lastInput.brake > 0) this.applyLongitudinalBrake(this.spec.braking);
+
+    const speedLimiter = drive > 0 ? 1 - Math.pow(normalizedSpeed, 3.2) : 1;
+    const force = localForward.scale(drive * this.spec.acceleration * speedLimiter);
+    this.body.applyForce(force, new CANNON.Vec3(0, 0, 0));
+
+    const grip = this.lastInput.handbrake ? 0.18 : this.spec.grip;
+    const lateralCorrection = lateralSpeed * clamp(grip * dt * 8.5, 0, 0.92);
+    velocity.x -= localRight.x * lateralCorrection;
+    velocity.z -= localRight.z * lateralCorrection;
+
+    const steerAuthority = clamp(Math.abs(this.speedForward) / 5, 0, 1) * (1 - normalizedSpeed * 0.45);
+    const reverseSign = this.speedForward < -0.8 ? -1 : 1;
+    const driftBoost = this.lastInput.handbrake && Math.abs(this.speedForward) > 8 ? 1.32 : 1;
+    const targetYaw = this.lastInput.steering * this.spec.handling * steerAuthority * reverseSign * driftBoost;
+    this.body.angularVelocity.y = damp(this.body.angularVelocity.y, targetYaw, this.lastInput.handbrake ? 3.5 : 7.5, dt);
+
+    const aeroDrag = 0.00042 * velocity.lengthSquared();
+    velocity.x -= velocity.x * aeroDrag * dt;
+    velocity.z -= velocity.z * aeroDrag * dt;
+    if (Math.abs(this.speedForward) > this.spec.topSpeed * 1.05) {
+      velocity.x *= 0.992;
+      velocity.z *= 0.992;
+    }
+
+    if (this.body.position.y < -2 || Math.abs(this.body.position.x) > 760 || Math.abs(this.body.position.z) > 760) this.recover();
+  }
+
+  syncVisual(dt: number): void {
+    this.group.position.set(this.body.position.x, this.body.position.y - 0.42, this.body.position.z);
+    this.group.quaternion.set(this.body.quaternion.x, this.body.quaternion.y, this.body.quaternion.z, this.body.quaternion.w);
+    this.wheelSpin += this.speedForward * dt / 0.38;
+    this.steeringVisual = damp(this.steeringVisual, this.lastInput.steering * 0.5, 10, dt);
+    this.model.userData.wheels.forEach((wheel, index) => {
+      wheel.rotation.x = this.wheelSpin;
+      if (index === 1 || index === 3) wheel.rotation.y = this.steeringVisual;
+    });
+    const brakeIntensity = this.lastInput.brake > 0.05 ? 0xff7a87 : 0xff263f;
+    this.model.userData.brakeLights.forEach((light) => {
+      (light.material as THREE.MeshBasicMaterial).color.setHex(brakeIntensity);
+    });
+  }
+
+  getTelemetry(): VehicleTelemetry {
+    const speedKph = Math.abs(this.speedForward) * 3.6;
+    const gearNumber = speedKph < 3 ? 'N' : String(clamp(Math.ceil(speedKph / 38), 1, 6));
+    const gear = this.speedForward < -1.5 ? 'R' : gearNumber;
+    const band = gear === 'N' || gear === 'R' ? speedKph / 40 : (speedKph % 38) / 38;
+    return {
+      speedKph,
+      rpm: clamp(1100 + band * 6900 + this.lastInput.throttle * 700, 900, 8500),
+      gear,
+      slip: this.slip,
+      drifting: this.slip > 0.22 && speedKph > 24,
+      position: this.group.position
+    };
+  }
+
+  reset(x: number, z: number, yaw: number): void {
+    this.body.position.set(x, 0.75, z);
+    this.body.velocity.setZero();
+    this.body.angularVelocity.setZero();
+    this.body.quaternion.setFromEuler(0, yaw, 0);
+    this.body.wakeUp();
+  }
+
+  recover(): void {
+    const x = Math.round(this.body.position.x / 120) * 120;
+    const z = Math.round(this.body.position.z / 120) * 120;
+    const rotation = new CANNON.Vec3();
+    this.body.quaternion.toEuler(rotation);
+    this.reset(x, z, rotation.y);
+  }
+
+  private applyLongitudinalBrake(strength: number): void {
+    const scale = 1 - clamp(strength * 0.075, 0, 0.2);
+    this.body.velocity.x *= scale;
+    this.body.velocity.z *= scale;
+  }
+}
