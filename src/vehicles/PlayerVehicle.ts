@@ -27,7 +27,7 @@ export class PlayerVehicle {
       mass: 1180,
       shape: new CANNON.Box(new CANNON.Vec3(1.02, 0.4, 2.16)),
       position: new CANNON.Vec3(0, 0.62, 0),
-      linearDamping: 0.08,
+      linearDamping: 0.025,
       angularDamping: 0.78,
       material: new CANNON.Material({ friction: 0, restitution: 0.05 })
     });
@@ -65,38 +65,38 @@ export class PlayerVehicle {
     const lateralSpeed = velocity.dot(localRight);
     this.slip = Math.abs(lateralSpeed) / Math.max(3, Math.abs(this.speedForward));
 
-    const normalizedSpeed = clamp(Math.abs(this.speedForward) / this.spec.topSpeed, 0, 1);
+    const targetSpeed = this.spec.topSpeedKph / 3.6;
+    const normalizedSpeed = clamp(Math.abs(this.speedForward) / targetSpeed, 0, 1);
     const movingForward = this.speedForward > 1.5;
     const movingBackward = this.speedForward < -1.5;
     let drive = 0;
 
     if (this.lastInput.throttle > 0 && !movingBackward) drive += this.lastInput.throttle;
-    else if (this.lastInput.throttle > 0) this.applyLongitudinalBrake(0.9);
+    else if (this.lastInput.throttle > 0) this.applyLongitudinalBrake(0.9 * this.lastInput.throttle, dt);
     if (this.lastInput.brake > 0 && !movingForward) drive -= this.lastInput.brake * 0.58;
-    else if (this.lastInput.brake > 0) this.applyLongitudinalBrake(this.spec.braking);
+    else if (this.lastInput.brake > 0) this.applyLongitudinalBrake(this.spec.braking * this.lastInput.brake, dt);
 
-    const speedLimiter = drive > 0 ? 1 - Math.pow(normalizedSpeed, 3.2) : 1;
-    const force = localForward.scale(drive * this.spec.acceleration * speedLimiter);
-    this.body.applyForce(force, new CANNON.Vec3(0, 0, 0));
+    const reverseSpeed = 48 / 3.6;
+    const speedLimiter = drive > 0
+      ? clamp((1 - normalizedSpeed) * 4, 0, 1)
+      : clamp(1 - Math.pow(Math.abs(this.speedForward) / reverseSpeed, 2), 0, 1);
+    const impulse = localForward.scale(drive * this.spec.acceleration * this.body.mass * speedLimiter * dt);
+    this.body.applyImpulse(impulse);
 
     const grip = this.lastInput.handbrake ? 0.18 : this.spec.grip;
     const lateralCorrection = lateralSpeed * clamp(grip * dt * 8.5, 0, 0.92);
     velocity.x -= localRight.x * lateralCorrection;
     velocity.z -= localRight.z * lateralCorrection;
 
-    const steerAuthority = clamp(Math.abs(this.speedForward) / 5, 0, 1) * (1 - normalizedSpeed * 0.45);
+    const steerAuthority = clamp(Math.abs(this.speedForward) / 5, 0, 1) * (1 - normalizedSpeed * 0.68);
     const reverseSign = this.speedForward < -0.8 ? -1 : 1;
     const driftBoost = this.lastInput.handbrake && Math.abs(this.speedForward) > 8 ? 1.32 : 1;
     const targetYaw = this.lastInput.steering * this.spec.handling * steerAuthority * reverseSign * driftBoost;
     this.body.angularVelocity.y = damp(this.body.angularVelocity.y, targetYaw, this.lastInput.handbrake ? 3.5 : 7.5, dt);
 
-    const aeroDrag = 0.00042 * velocity.lengthSquared();
+    const aeroDrag = 0.00002 * velocity.lengthSquared();
     velocity.x -= velocity.x * aeroDrag * dt;
     velocity.z -= velocity.z * aeroDrag * dt;
-    if (Math.abs(this.speedForward) > this.spec.topSpeed * 1.05) {
-      velocity.x *= 0.992;
-      velocity.z *= 0.992;
-    }
 
     if (this.body.position.y < -2 || Math.abs(this.body.position.x) > 760 || Math.abs(this.body.position.z) > 760) this.recover();
   }
@@ -147,9 +147,12 @@ export class PlayerVehicle {
     this.reset(x, z, rotation.y);
   }
 
-  private applyLongitudinalBrake(strength: number): void {
-    const scale = 1 - clamp(strength * 0.075, 0, 0.2);
-    this.body.velocity.x *= scale;
-    this.body.velocity.z *= scale;
+  private applyLongitudinalBrake(strength: number, dt: number): void {
+    const forward = this.body.quaternion.vmult(new CANNON.Vec3(0, 0, 1));
+    const forwardSpeed = this.body.velocity.dot(forward);
+    const deltaSpeed = Math.min(Math.abs(forwardSpeed), strength * 14.5 * dt);
+    const direction = Math.sign(forwardSpeed);
+    this.body.velocity.x -= forward.x * deltaSpeed * direction;
+    this.body.velocity.z -= forward.z * deltaSpeed * direction;
   }
 }

@@ -183,7 +183,7 @@ export class HUD {
     list.innerHTML = VEHICLES.map((vehicle) => {
       const unlocked = this.save.unlockedVehicles.includes(vehicle.id);
       const selected = this.save.selectedVehicle === vehicle.id;
-      const stats = [vehicle.topSpeed / 72, vehicle.acceleration / 13200, vehicle.handling / 2.85, vehicle.braking];
+      const stats = [vehicle.topSpeedKph / 212, vehicle.acceleration / 10, vehicle.handling / 2.85, vehicle.braking];
       return `<button class="car-card ${selected ? 'selected' : ''} ${unlocked ? '' : 'locked'}" data-action="select-vehicle" data-id="${vehicle.id}" ${unlocked ? '' : 'disabled'}>
         <span class="car-swatch" style="--car-color:${this.save.vehicleColors[vehicle.id] ?? vehicle.color}"></span>
         <span class="car-info"><small>${vehicle.className}</small><strong>${vehicle.name}</strong><em>${unlocked ? vehicle.description : `Win ${vehicle.unlockWins} missions to unlock`}</em></span>

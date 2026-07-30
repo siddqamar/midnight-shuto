@@ -12,7 +12,7 @@ export interface VehicleSpec {
   description: string;
   color: string;
   accent: string;
-  topSpeed: number;
+  topSpeedKph: number;
   acceleration: number;
   handling: number;
   braking: number;
