@@ -153,11 +153,19 @@ export class PlayerVehicle {
   }
 
   recover(): void {
-    const x = Math.round(this.body.position.x / 120) * 120;
-    const z = Math.round(this.body.position.z / 120) * 120;
+    const x = clamp(Math.round(this.body.position.x / 120) * 120, -600, 600);
+    const z = clamp(Math.round(this.body.position.z / 120) * 120, -600, 600);
     const rotation = new CANNON.Vec3();
     this.body.quaternion.toEuler(rotation);
-    this.reset(x, z, rotation.y);
+    let yaw = rotation.y;
+    const forwardX = Math.sin(yaw);
+    const forwardZ = Math.cos(yaw);
+    const facingOutward = (x >= 600 && forwardX > 0) ||
+      (x <= -600 && forwardX < 0) ||
+      (z >= 600 && forwardZ > 0) ||
+      (z <= -600 && forwardZ < 0);
+    if (facingOutward) yaw += Math.PI;
+    this.reset(x, z, yaw);
   }
 
   private applyLongitudinalBrake(strength: number, dt: number): void {

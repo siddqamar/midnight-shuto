@@ -224,7 +224,8 @@ export class Game {
 
   private exposeDebugSnapshot(): void {
     if (!new URLSearchParams(window.location.search).has('debug')) return;
-    const debugWindow = window as unknown as { __shutoDebug: () => unknown };
+    const debugWindow = window as unknown as { __shutoDebug: () => unknown; __shutoReset: () => void };
+    debugWindow.__shutoReset = () => this.vehicle.reset(0, 0, 0);
     debugWindow.__shutoDebug = () => {
       const telemetry = this.vehicle.getTelemetry();
       return {
@@ -245,6 +246,8 @@ export class Game {
           mass: this.vehicle.body.mass,
           position: { ...this.vehicle.body.position },
           velocity: { ...this.vehicle.body.velocity },
+          angularVelocity: { ...this.vehicle.body.angularVelocity },
+          quaternion: { ...this.vehicle.body.quaternion },
           force: { ...this.vehicle.body.force },
           sleeping: this.vehicle.body.sleepState
         },

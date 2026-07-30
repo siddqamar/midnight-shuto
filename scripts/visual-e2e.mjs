@@ -82,6 +82,14 @@ try {
   const garageBounds = await mobile.locator('.wide-panel.active').boundingBox();
   if (!garageBounds || garageBounds.x < 0 || garageBounds.x + garageBounds.width > 390) throw new Error('Mobile garage overflows the viewport.');
   await mobile.screenshot({ path: join(artifactsPath, 'garage-mobile.png') });
+  await mobile.locator('.menu-panel.active [data-action="close-panel"]').click({ force: true });
+  await mobile.locator('[data-action="continue"]').click({ force: true });
+  await mobile.keyboard.down('w');
+  await mobile.waitForTimeout(2200);
+  await mobile.keyboard.up('w');
+  const mobileSpeed = Number(await mobile.locator('#speed-value').textContent());
+  if (mobileSpeed < 5) throw new Error(`Mobile vehicle did not accelerate: ${mobileSpeed} km/h.`);
+  await mobile.screenshot({ path: join(artifactsPath, 'drive-mobile.png') });
   await mobile.close();
 
   for (const vehicle of vehicles) {
