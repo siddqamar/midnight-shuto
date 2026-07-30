@@ -1,6 +1,7 @@
 import { MISSIONS, VEHICLES, WORLD_SIZE } from '../core/config';
 import type { CameraMode, Difficulty, SaveData, VehicleTelemetry, Weather } from '../core/types';
 import type { MissionHUDState } from '../missions/MissionSystem';
+import { speedEffectIntensity } from '../utils/math';
 
 export interface UIHandlers {
   continue: () => void;
@@ -29,6 +30,7 @@ export class HUD {
   private countdownElement: HTMLElement;
   private debugElement: HTMLElement;
   private cameraElement: HTMLElement;
+  private speedEffectsElement: HTMLElement;
   private toastElement: HTMLElement;
   private lastSpeed = -1;
   private toastTimeout = 0;
@@ -52,6 +54,7 @@ export class HUD {
     this.countdownElement = this.require('#countdown');
     this.debugElement = this.require('#debug-panel');
     this.cameraElement = this.require('#camera-label');
+    this.speedEffectsElement = this.require('#speed-effects');
     this.toastElement = this.require('#toast');
     this.renderGarage();
     this.renderMissionList();
@@ -120,6 +123,7 @@ export class HUD {
     }
     this.rpmElement.style.setProperty('--rpm', `${Math.min(1, telemetry.rpm / 8500) * 100}%`);
     this.gearElement.textContent = telemetry.gear;
+    this.speedEffectsElement.style.setProperty('--speed-intensity', speedEffectIntensity(telemetry.speedKph).toFixed(3));
     this.cameraElement.textContent = camera;
     this.missionPanel.classList.toggle('active', mission.active);
     this.require('#mission-title').textContent = mission.title;
@@ -276,6 +280,7 @@ export class HUD {
     return `<main id="game-shell">
       <div id="viewport"></div>
       <div class="film-grain"></div>
+      <div id="speed-effects" aria-hidden="true"></div>
       <section id="main-menu" class="screen-layer">
         <header class="menu-header"><span class="micro">湾岸 // 01:42</span><span class="status-dot">SHUTO NETWORK ONLINE</span></header>
         <div class="brand-block">

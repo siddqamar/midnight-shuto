@@ -1,11 +1,18 @@
 import { spawn } from 'node:child_process';
+import { mkdir } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 
 const root = new URL('../', import.meta.url);
+const artifacts = new URL('../e2e-artifacts/', import.meta.url);
+const artifactsPath = fileURLToPath(artifacts);
 const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const port = 4174;
 const origin = `http://127.0.0.1:${port}`;
 const vehicles = ['kaze', 'michi', 'raiden', 'shogun'];
+
+await mkdir(artifacts, { recursive: true });
 
 const server = spawn(
   process.execPath,
@@ -49,31 +56,59 @@ try {
     await page.locator('[data-action="continue"]').click({ force: true });
     await page.locator('#hud').waitFor({ state: 'visible' });
 
+    const baseFeedback = await page.evaluate(() => window.__shutoDebug?.().feedback);
     await page.keyboard.down('w');
     const startedAt = performance.now();
     let zeroToEighty = null;
     let maximumSpeed = 0;
+    let lowSpeedFeedback = 0;
+    let maximumFeedback = 0;
+    let maximumCameraFov = Number(baseFeedback?.cameraFov ?? 0);
+    let maximumAudioFeedback = 0;
+    let feedbackMismatch = 0;
+    let capturedHighSpeed = false;
     for (let sample = 0; sample < 36; sample += 1) {
       await page.waitForTimeout(500);
-      const speed = Number(await page.locator('#speed-value').innerText());
+      const snapshot = await page.evaluate(() => ({
+        speed: Number(document.querySelector('#speed-value')?.textContent ?? 0),
+        feedback: window.__shutoDebug?.().feedback,
+        visualIntensity: Number(getComputedStyle(document.querySelector('#speed-effects')).getPropertyValue('--speed-intensity'))
+      }));
+      const speed = snapshot.speed;
+      const feedback = Number(snapshot.feedback?.cameraIntensity ?? 0);
       maximumSpeed = Math.max(maximumSpeed, speed);
+      maximumFeedback = Math.max(maximumFeedback, feedback);
+      maximumCameraFov = Math.max(maximumCameraFov, Number(snapshot.feedback?.cameraFov ?? 0));
+      maximumAudioFeedback = Math.max(maximumAudioFeedback, Number(snapshot.feedback?.audioIntensity ?? 0));
+      feedbackMismatch = Math.max(feedbackMismatch, Math.abs(snapshot.visualIntensity - feedback));
+      if (vehicle === 'shogun' && speed >= 150 && !capturedHighSpeed) {
+        await page.screenshot({ path: join(artifactsPath, 'high-speed.png') });
+        capturedHighSpeed = true;
+      }
+      if (speed < 75) lowSpeedFeedback = Math.max(lowSpeedFeedback, feedback);
       if (zeroToEighty === null && speed >= 80) zeroToEighty = (performance.now() - startedAt) / 1000;
     }
     await page.keyboard.up('w');
-    results.push({ vehicle, maximumSpeed, zeroToEighty });
+    results.push({ vehicle, maximumSpeed, zeroToEighty, baseFeedback, lowSpeedFeedback, maximumFeedback, maximumCameraFov, maximumAudioFeedback, feedbackMismatch });
     await page.close();
   }
 
   console.table(results.map((result) => ({
     vehicle: result.vehicle,
     '0-80 km/h': result.zeroToEighty === null ? 'not reached' : `${result.zeroToEighty.toFixed(2)} s`,
-    'maximum km/h': result.maximumSpeed
+    'maximum km/h': result.maximumSpeed,
+    'speed effect': result.maximumFeedback.toFixed(2)
   })));
 
   const failures = [];
   for (const result of results) {
     if (result.maximumSpeed < 120) failures.push(`${result.vehicle} reached only ${result.maximumSpeed} km/h`);
     if (result.zeroToEighty === null || result.zeroToEighty > 10) failures.push(`${result.vehicle} did not reach 80 km/h within 10 seconds`);
+    if (result.lowSpeedFeedback > 0.01) failures.push(`${result.vehicle} activated high-speed feedback below 80 km/h`);
+    if (result.maximumFeedback < 0.15) failures.push(`${result.vehicle} did not produce noticeable high-speed feedback`);
+    if (result.maximumCameraFov < (result.baseFeedback?.cameraFov ?? 0) + 4) failures.push(`${result.vehicle} did not expand the camera FOV enough`);
+    if (result.maximumAudioFeedback < 0.15) failures.push(`${result.vehicle} did not increase high-speed audio feedback`);
+    if (result.feedbackMismatch > 0.02) failures.push(`${result.vehicle} visual and camera feedback were not synchronized`);
   }
   for (let index = 1; index < results.length; index += 1) {
     const previous = results[index - 1];
