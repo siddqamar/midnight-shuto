@@ -281,7 +281,8 @@ export class MissionSystem {
     const route = [start, ...mission.checkpoints.map(([x, z]) => new THREE.Vector3(x, 0.58, z))];
     const base = this.difficulty === 'easy' ? 18 : this.difficulty === 'hard' ? 25 : 21.5;
     for (let index = 0; index < 3; index += 1) {
-      const model = createCarModel(['#ee355f', '#8e5dff', '#48dd9b'][index], '#10131a');
+      const vehicleId = index === 0 ? 'kaze' : index === 1 ? 'michi' : 'raiden';
+      const model = createCarModel(vehicleId, ['#ee355f', '#8e5dff', '#48dd9b'][index], '#10131a');
       model.scale.setScalar(0.92);
       model.position.copy(start).add(new THREE.Vector3((index - 1) * 3.2, 0, -4 - index * 2.5));
       this.scene.add(model);
@@ -311,7 +312,7 @@ export class MissionSystem {
       opponent.model.position.x += avoidance * dt;
       opponent.distance += opponent.speed * dt;
       opponent.model.rotation.y = Math.atan2(direction.x, direction.z);
-      opponent.model.userData.wheels?.forEach((wheel: THREE.Mesh) => { wheel.rotation.x += opponent.speed * dt / 0.38; });
+      opponent.model.userData.wheels?.forEach((wheel: THREE.Group) => { wheel.rotation.x += opponent.speed * dt / 0.38; });
     }
   }
 

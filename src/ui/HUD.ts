@@ -1,5 +1,5 @@
 import { MISSIONS, VEHICLES, WORLD_SIZE } from '../core/config';
-import type { CameraMode, Difficulty, SaveData, VehicleTelemetry, Weather } from '../core/types';
+import type { CameraMode, Difficulty, SaveData, VehicleId, VehicleTelemetry, Weather } from '../core/types';
 import type { MissionHUDState } from '../missions/MissionSystem';
 import { speedEffectIntensity } from '../utils/math';
 
@@ -16,6 +16,53 @@ export interface UIHandlers {
   setDifficulty: (difficulty: Difficulty) => void;
   setQuality: (quality: SaveData['settings']['quality']) => void;
   setAudio: (volume: number) => void;
+}
+
+const vehiclePreviewProfiles: Record<VehicleId, {
+  body: string;
+  glass: string;
+  wheels: [number, number];
+  detail: string;
+}> = {
+  kaze: {
+    body: 'M7 48 L12 37 L30 32 L48 29 L60 16 L101 15 L122 29 L147 35 L154 48 Z',
+    glass: 'M52 29 L64 19 L99 19 L116 30 Z',
+    wheels: [38, 128],
+    detail: 'M12 38 L31 34 M125 31 L146 37 M67 19 L67 30 M86 18 L86 30'
+  },
+  michi: {
+    body: 'M8 48 L11 30 L31 27 L43 14 L101 14 L125 27 L147 34 L154 48 Z',
+    glass: 'M34 28 L48 18 L98 18 L118 29 Z',
+    wheels: [37, 127],
+    detail: 'M12 32 L29 29 M128 30 L147 36 M63 18 L63 29 M88 18 L88 29'
+  },
+  raiden: {
+    body: 'M5 48 L10 39 L37 33 L55 30 L67 19 L104 17 L124 30 L151 39 L155 48 Z',
+    glass: 'M58 30 L70 21 L102 20 L117 31 Z',
+    wheels: [38, 132],
+    detail: 'M11 40 L38 35 M126 32 L150 40 M80 21 L80 31 M100 20 L101 31'
+  },
+  shogun: {
+    body: 'M4 49 L10 40 L57 31 L99 18 L127 20 L151 40 L156 49 Z',
+    glass: 'M62 31 L100 21 L124 23 L138 37 Z',
+    wheels: [39, 130],
+    detail: 'M11 41 L57 33 M105 22 L125 24 M129 25 L150 40 M115 24 L132 38'
+  }
+};
+
+function vehiclePreview(vehicleId: VehicleId, color: string): string {
+  const preview = vehiclePreviewProfiles[vehicleId];
+  const wheels = preview.wheels.map((x) => `<g transform="translate(${x} 48)"><circle class="preview-tire" r="12"/><circle class="preview-rim" r="6"/><path class="preview-spokes" d="M-5 0H5M0-5V5M-3.5-3.5L3.5 3.5M3.5-3.5L-3.5 3.5"/></g>`).join('');
+  return `<svg class="car-preview" style="--car-color:${color}" viewBox="0 0 160 68" aria-hidden="true">
+    <ellipse class="preview-shadow" cx="81" cy="59" rx="70" ry="6"/>
+    <path class="preview-body" d="${preview.body}"/>
+    <path class="preview-highlight" d="${preview.body}"/>
+    <path class="preview-glass" d="${preview.glass}"/>
+    <path class="preview-detail" d="${preview.detail}"/>
+    <rect class="preview-headlight" x="145" y="38" width="9" height="5" rx="1"/>
+    <rect class="preview-taillight" x="7" y="38" width="8" height="5" rx="1"/>
+    ${wheels}
+  </svg>`;
 }
 
 export class HUD {
@@ -189,7 +236,7 @@ export class HUD {
       const selected = this.save.selectedVehicle === vehicle.id;
       const stats = [vehicle.topSpeedKph / 212, vehicle.acceleration / 10, vehicle.handling / 2.85, vehicle.braking];
       return `<button class="car-card ${selected ? 'selected' : ''} ${unlocked ? '' : 'locked'}" data-action="select-vehicle" data-id="${vehicle.id}" ${unlocked ? '' : 'disabled'}>
-        <span class="car-swatch" style="--car-color:${this.save.vehicleColors[vehicle.id] ?? vehicle.color}"></span>
+        ${vehiclePreview(vehicle.id, this.save.vehicleColors[vehicle.id] ?? vehicle.color)}
         <span class="car-info"><small>${vehicle.className}</small><strong>${vehicle.name}</strong><em>${unlocked ? vehicle.description : `Win ${vehicle.unlockWins} missions to unlock`}</em></span>
         <span class="car-stats">${stats.map((value) => `<i style="--value:${Math.round(value * 100)}%"></i>`).join('')}</span>
       </button>`;

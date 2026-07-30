@@ -19,13 +19,17 @@ export class PlayerVehicle {
   constructor(world: CANNON.World, scene: THREE.Scene, spec: VehicleSpec, color: string) {
     this.spec = spec;
     this.group = new THREE.Group();
-    this.model = createCarModel(color, spec.accent);
+    this.model = createCarModel(spec.id, color, spec.accent);
     this.group.add(this.model);
     scene.add(this.group);
 
     this.body = new CANNON.Body({
       mass: 1180,
-      shape: new CANNON.Box(new CANNON.Vec3(1.02, 0.4, 2.16)),
+      shape: new CANNON.Box(new CANNON.Vec3(
+        this.model.userData.collisionHalfExtents.x,
+        this.model.userData.collisionHalfExtents.y,
+        this.model.userData.collisionHalfExtents.z
+      )),
       position: new CANNON.Vec3(0, 0.62, 0),
       linearDamping: 0.025,
       angularDamping: 0.78,
@@ -48,8 +52,14 @@ export class PlayerVehicle {
   setSpec(spec: VehicleSpec, color: string): void {
     this.spec = spec;
     this.group.remove(this.model);
-    this.model = createCarModel(color, spec.accent);
+    this.model = createCarModel(spec.id, color, spec.accent);
     this.group.add(this.model);
+    const previousShape = this.body.shapes[0];
+    if (previousShape) this.body.removeShape(previousShape);
+    const halfExtents = this.model.userData.collisionHalfExtents;
+    this.body.addShape(new CANNON.Box(new CANNON.Vec3(halfExtents.x, halfExtents.y, halfExtents.z)));
+    this.body.updateMassProperties();
+    this.body.updateBoundingRadius();
   }
 
   setColor(color: string): void {
@@ -112,7 +122,10 @@ export class PlayerVehicle {
     });
     const brakeIntensity = this.lastInput.brake > 0.05 ? 0xff7a87 : 0xff263f;
     this.model.userData.brakeLights.forEach((light) => {
-      (light.material as THREE.MeshBasicMaterial).color.setHex(brakeIntensity);
+      const material = light.material as THREE.MeshStandardMaterial;
+      material.color.setHex(brakeIntensity);
+      material.emissive.setHex(this.lastInput.brake > 0.05 ? 0xff1f3d : 0x8a0718);
+      material.emissiveIntensity = this.lastInput.brake > 0.05 ? 2.6 : 1.5;
     });
   }
 

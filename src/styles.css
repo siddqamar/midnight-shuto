@@ -211,11 +211,17 @@ button { color: inherit; }
 .car-card.selected,
 .mission-card:hover { border-color: rgba(77, 233, 255, 0.7); background: rgba(77, 233, 255, 0.08); transform: translateY(-1px); }
 .car-card.locked { opacity: 0.45; filter: grayscale(1); cursor: not-allowed; }
-.car-swatch { width: 70px; height: 42px; flex: 0 0 auto; transform: skewX(-12deg); border-radius: 45% 55% 14% 12%; background: linear-gradient(155deg, #fff8, transparent 35%), var(--car-color); box-shadow: inset -14px -10px 0 rgba(0,0,0,.28), 0 10px 18px rgba(0,0,0,.24); }
-.car-swatch::before,
-.car-swatch::after { content: ""; position: absolute; bottom: -6px; width: 14px; height: 14px; border-radius: 50%; background: #080a0d; border: 3px solid #67717a; }
-.car-swatch::before { left: 9px; }
-.car-swatch::after { right: 9px; }
+.car-preview { width: 104px; height: 52px; flex: 0 0 auto; overflow: visible; filter: drop-shadow(0 9px 7px rgba(0,0,0,.38)); }
+.preview-shadow { fill: rgba(0,0,0,.38); }
+.preview-body { fill: var(--car-color); stroke: rgba(255,255,255,.38); stroke-width: 1.2; stroke-linejoin: round; }
+.preview-highlight { fill: none; stroke: rgba(255,255,255,.32); stroke-width: 1.3; clip-path: inset(0 0 45% 0); }
+.preview-glass { fill: #101b28; stroke: rgba(154,205,228,.48); stroke-width: 1; }
+.preview-detail { fill: none; stroke: rgba(7,11,17,.74); stroke-width: 1.2; }
+.preview-tire { fill: #080a0d; stroke: #313940; stroke-width: 2; }
+.preview-rim { fill: #aeb7be; stroke: #e6ebee; stroke-width: 1; }
+.preview-spokes { fill: none; stroke: #4c555d; stroke-width: 1.1; }
+.preview-headlight { fill: #dff3ff; }
+.preview-taillight { fill: #ff334b; }
 .car-info { display: grid; gap: 2px; min-width: 0; flex: 1; }
 .car-info small,
 .mission-card small { color: var(--cyan); font-size: 7px; font-weight: 800; letter-spacing: 0.17em; }

@@ -62,8 +62,8 @@ export class CameraRig {
 
     if (mode === 'ORBIT') {
       this.orbitAngle += dt * 0.22;
-      this.targetPosition.copy(this.target.position).add(new THREE.Vector3(Math.sin(this.orbitAngle) * 10, 4.2, Math.cos(this.orbitAngle) * 10));
-      this.lookTarget.copy(this.target.position).add(new THREE.Vector3(0, 1, 0));
+      this.targetPosition.copy(this.target.position).add(new THREE.Vector3(Math.sin(this.orbitAngle) * 7.2, 2.7, Math.cos(this.orbitAngle) * 7.2));
+      this.lookTarget.copy(this.target.position).add(new THREE.Vector3(0, 0.82, 0));
     } else if (mode === 'FREE') {
       this.targetPosition.copy(this.target.position).add(new THREE.Vector3(0, 7, 0));
       const direction = new THREE.Vector3(

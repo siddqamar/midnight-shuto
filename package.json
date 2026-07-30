@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json --pretty false",
     "test:e2e": "node scripts/e2e.mjs",
-    "test:performance": "node scripts/performance-e2e.mjs"
+    "test:performance": "node scripts/performance-e2e.mjs",
+    "test:visual": "node scripts/visual-e2e.mjs"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",
