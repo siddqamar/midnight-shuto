@@ -24,29 +24,30 @@ const vehiclePreviewProfiles: Record<VehicleId, {
   wheels: [number, number];
   detail: string;
 }> = {
+  // Side silhouettes aligned with Midtown-style class identity
   kaze: {
-    body: 'M7 48 L12 37 L30 32 L48 29 L60 16 L101 15 L122 29 L147 35 L154 48 Z',
-    glass: 'M52 29 L64 19 L99 19 L116 30 Z',
-    wheels: [38, 128],
-    detail: 'M12 38 L31 34 M125 31 L146 37 M67 19 L67 30 M86 18 L86 30'
+    body: 'M10 50 L12 40 L28 34 L48 30 L62 18 L104 17 L126 30 L148 36 L154 50 Z',
+    glass: 'M56 30 L68 20 L100 20 L114 31 Z',
+    wheels: [40, 126],
+    detail: 'M14 40 L32 35 M128 32 L148 38 M72 20 L72 30 M90 19 L90 30 M148 40 H154'
   },
   michi: {
-    body: 'M8 48 L11 30 L31 27 L43 14 L101 14 L125 27 L147 34 L154 48 Z',
-    glass: 'M34 28 L48 18 L98 18 L118 29 Z',
-    wheels: [37, 127],
-    detail: 'M12 32 L29 29 M128 30 L147 36 M63 18 L63 29 M88 18 L88 29'
+    body: 'M9 50 L11 34 L30 30 L40 16 L108 15 L128 28 L148 36 L154 50 Z',
+    glass: 'M36 30 L48 18 L100 17 L118 30 Z',
+    wheels: [38, 126],
+    detail: 'M14 34 L28 30 M130 30 L148 38 M62 17 L62 29 M88 17 L88 29 M48 15 L62 12 L98 12 L108 16'
   },
   raiden: {
-    body: 'M5 48 L10 39 L37 33 L55 30 L67 19 L104 17 L124 30 L151 39 L155 48 Z',
-    glass: 'M58 30 L70 21 L102 20 L117 31 Z',
-    wheels: [38, 132],
-    detail: 'M11 40 L38 35 M126 32 L150 40 M80 21 L80 31 M100 20 L101 31'
+    body: 'M6 50 L10 40 L34 34 L54 30 L68 20 L110 18 L130 30 L152 40 L156 50 Z',
+    glass: 'M60 30 L72 21 L106 20 L120 31 Z',
+    wheels: [40, 130],
+    detail: 'M12 41 L36 35 M128 32 L150 41 M84 21 L84 31 M102 20 L102 31 M72 42 A10 8 0 0 0 92 42'
   },
   shogun: {
-    body: 'M4 49 L10 40 L57 31 L99 18 L127 20 L151 40 L156 49 Z',
-    glass: 'M62 31 L100 21 L124 23 L138 37 Z',
-    wheels: [39, 130],
-    detail: 'M11 41 L57 33 M105 22 L125 24 M129 25 L150 40 M115 24 L132 38'
+    body: 'M6 50 L12 40 L50 30 L96 18 L130 22 L152 40 L156 50 Z',
+    glass: 'M64 30 L100 20 L126 24 L136 36 Z',
+    wheels: [42, 128],
+    detail: 'M14 41 L52 32 M102 22 L128 25 M132 28 L150 40 M70 28 L98 20 L120 24'
   }
 };
 

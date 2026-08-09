@@ -63,7 +63,8 @@ export class PlayerVehicle {
   }
 
   setColor(color: string): void {
-    this.model.userData.bodyMaterial.color.set(color);
+    const paints = this.model.userData.bodyMaterials ?? [this.model.userData.bodyMaterial];
+    for (const material of paints) material.color.set(color);
   }
 
   prePhysics(dt: number, input: InputState, enabled: boolean): void {
@@ -116,9 +117,10 @@ export class PlayerVehicle {
     this.group.quaternion.set(this.body.quaternion.x, this.body.quaternion.y, this.body.quaternion.z, this.body.quaternion.w);
     this.wheelSpin += this.speedForward * dt / 0.38;
     this.steeringVisual = damp(this.steeringVisual, this.lastInput.steering * 0.5, 10, dt);
+    // Wheel order from GLB: fl, fr, rl, rr — front axles are indices 0 and 1.
     this.model.userData.wheels.forEach((wheel, index) => {
       wheel.rotation.x = this.wheelSpin;
-      if (index === 1 || index === 3) wheel.rotation.y = this.steeringVisual;
+      if (index === 0 || index === 1) wheel.rotation.y = this.steeringVisual;
     });
     const brakeIntensity = this.lastInput.brake > 0.05 ? 0xff7a87 : 0xff263f;
     this.model.userData.brakeLights.forEach((light) => {
