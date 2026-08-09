@@ -1,14 +1,15 @@
 """
 Generate original low-poly vehicle GLBs for Midnight Shuto.
 
-Four class-distinct arcade cars (sport coupe, turbo hatch, grand tourer, supercar).
-Original geometry only — not licensed game assets.
+Uses Blender's native Z-up coordinates so glTF Y-up export is correct:
+  Blender: X right, Y forward, Z up
+  glTF / Three.js after export_yup: X right, Y up, Z back (-forward)
+
+We build cars facing +Y (forward). After load in Three.js the model is rotated
+so gameplay forward remains +Z.
 
 Usage (from repo root):
   blender --background --python tools/blender/build_cars.py
-
-Env:
-  OUTPUT_DIR  output folder (default: <repo>/public/models)
 """
 
 from __future__ import annotations
@@ -21,7 +22,6 @@ from pathlib import Path
 
 import bmesh
 import bpy
-from mathutils import Vector
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
@@ -117,6 +117,7 @@ def parent_keep(child: bpy.types.Object, parent_obj: bpy.types.Object) -> None:
 
 def mesh_from_bmesh(name: str, bm: bmesh.types.BMesh, collection: bpy.types.Collection) -> bpy.types.Object:
     mesh = bpy.data.meshes.new(name)
+    bm.normal_update()
     bm.to_mesh(mesh)
     bm.free()
     mesh.update()
@@ -131,6 +132,7 @@ def create_box(
     collection: bpy.types.Collection,
     rotation: tuple[float, float, float] = (0.0, 0.0, 0.0),
 ) -> bpy.types.Object:
+    """size is (sx, sy, sz) in Blender axes: width, length, height."""
     bm = bmesh.new()
     bmesh.ops.create_cube(bm, size=1.0)
     obj = mesh_from_bmesh(name, bm, collection)
@@ -147,7 +149,7 @@ def create_cylinder(
     depth: float,
     location: tuple[float, float, float],
     collection: bpy.types.Collection,
-    rotation: tuple[float, float, float] = (0.0, 0.0, math.pi / 2),
+    rotation: tuple[float, float, float] = (0.0, 0.0, 0.0),
     segments: int = 20,
 ) -> bpy.types.Object:
     bm = bmesh.new()
@@ -190,32 +192,35 @@ def extrude_profile(
     taper_nose: float = 0.08,
     taper_tail: float = 0.03,
 ) -> bpy.types.Object:
-    """Build a solid from closed-ish side profile points (z, y), extruded on X."""
-    zs = [p[0] for p in profile]
-    z_min, z_max = min(zs), max(zs)
-    span = max(1e-3, z_max - z_min)
+    """
+    Side profile points are (forward_y, up_z) in Blender space.
+    Extruded symmetrically on X (width).
+    """
+    ys = [p[0] for p in profile]
+    y_min, y_max = min(ys), max(ys)
+    span = max(1e-3, y_max - y_min)
 
-    def width_at(z: float) -> float:
-        nose = max(0.0, (z - (z_min + span * 0.55)) / (span * 0.45))
-        tail = max(0.0, ((z_min + span * 0.35) - z) / (span * 0.35))
+    def width_at(forward: float) -> float:
+        nose = max(0.0, (forward - (y_min + span * 0.55)) / (span * 0.45))
+        tail = max(0.0, ((y_min + span * 0.35) - forward) / (span * 0.35))
         return half_width * (1.0 - nose * taper_nose - tail * taper_tail)
 
     bm = bmesh.new()
     left: list[bmesh.types.BMVert] = []
     right: list[bmesh.types.BMVert] = []
-    for z, y in profile:
-        w = width_at(z)
-        left.append(bm.verts.new((-w, y, z)))
-        right.append(bm.verts.new((w, y, z)))
+    for forward, up in profile:
+        w = width_at(forward)
+        # Blender: X width, Y forward, Z up
+        left.append(bm.verts.new((-w, forward, up)))
+        right.append(bm.verts.new((w, forward, up)))
     bm.verts.ensure_lookup_table()
 
     n = len(profile)
     for i in range(n - 1):
-        bm.faces.new((left[i], left[i + 1], right[i + 1], right[i]))
-    # end caps
+        bm.faces.new((left[i], right[i], right[i + 1], left[i + 1]))
     if n >= 3:
-        bm.faces.new(list(reversed(left)))
-        bm.faces.new(right)
+        bm.faces.new(left)
+        bm.faces.new(list(reversed(right)))
 
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     obj = mesh_from_bmesh(name, bm, collection)
@@ -344,21 +349,24 @@ def build_wheel(
 ) -> bpy.types.Object:
     root = empty(name, location, collection)
 
-    tire = create_cylinder(f"{name}_tire", radius, width, (0, 0, 0), collection, segments=24)
+    # Default cylinder is along Z; rotate to axle along X (sideways)
+    axle_rot = (0.0, math.pi / 2, 0.0)
+
+    tire = create_cylinder(f"{name}_tire", radius, width, (0, 0, 0), collection, rotation=axle_rot, segments=24)
     assign(tire, mats["Rubber"])
     smooth(tire)
     parent_keep(tire, root)
 
-    rim = create_cylinder(f"{name}_rim", radius * 0.58, width * 0.55, (0, 0, 0), collection, segments=18)
+    rim = create_cylinder(f"{name}_rim", radius * 0.58, width * 0.55, (0, 0, 0), collection, rotation=axle_rot, segments=18)
     assign(rim, mats["Rim"])
     smooth(rim)
     parent_keep(rim, root)
 
-    hub = create_cylinder(f"{name}_hub", radius * 0.18, width * 0.62, (0, 0, 0), collection, segments=12)
+    hub = create_cylinder(f"{name}_hub", radius * 0.18, width * 0.62, (0, 0, 0), collection, rotation=axle_rot, segments=12)
     assign(hub, mats["Chrome"])
     parent_keep(hub, root)
 
-    disc = create_cylinder(f"{name}_disc", radius * 0.42, width * 0.08, (0, 0, 0), collection, segments=14)
+    disc = create_cylinder(f"{name}_disc", radius * 0.42, width * 0.08, (0, 0, 0), collection, rotation=axle_rot, segments=14)
     assign(disc, mats["Brake"])
     parent_keep(disc, root)
 
@@ -419,8 +427,9 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
 
     half_w = spec["width"] * 0.5
     ride = spec["ride"]
-    body_profile = [(z, y + ride) for z, y in spec["body"]]
-    cabin_profile = [(z, y + ride) for z, y in spec["cabin"]]
+    # profile (forward_y, up_z)
+    body_profile = [(y, z + ride) for y, z in spec["body"]]
+    cabin_profile = [(y, z + ride) for y, z in spec["cabin"]]
 
     body = extrude_profile(
         "body_shell",
@@ -436,8 +445,8 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
     for side in (-1.0, 1.0):
         skirt = create_box(
             f"skirt_{'L' if side < 0 else 'R'}",
-            (0.06, 0.10, spec["length"] * 0.72),
-            (side * (half_w + 0.01), ride + 0.22, 0.05),
+            (0.06, spec["length"] * 0.72, 0.10),
+            (side * (half_w + 0.01), 0.05, ride + 0.22),
             collection,
         )
         assign(skirt, mats["Trim"])
@@ -454,80 +463,92 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
     assign(glass, mats["Glass"])
     parent_keep(glass, root)
 
-    cabin_mid_z = (cabin_profile[0][0] + cabin_profile[-1][0]) * 0.5
-    cabin_top_y = max(y for _, y in cabin_profile)
+    cabin_mid_y = (cabin_profile[0][0] + cabin_profile[-1][0]) * 0.5
+    cabin_top_z = max(z for _, z in cabin_profile)
     for side in (-1.0, 1.0):
         pillar = create_box(
             f"pillar_{'L' if side < 0 else 'R'}",
-            (0.06, 0.42, 0.08),
-            (side * half_w * 0.72, (cabin_profile[0][1] + cabin_top_y) * 0.5, cabin_mid_z),
+            (0.06, 0.08, 0.42),
+            (side * half_w * 0.72, cabin_mid_y, (cabin_profile[0][1] + cabin_top_z) * 0.5),
             collection,
             rotation=(0.12, 0.0, 0.0),
         )
         assign(pillar, mats["BodyPaint"])
         parent_keep(pillar, root)
 
-    front_z = max(z for z, _ in body_profile) + 0.02
-    rear_z = min(z for z, _ in body_profile) - 0.02
-    front_bumper = create_box("front_bumper", (spec["width"] * 0.92, 0.18, 0.16), (0.0, ride + 0.28, front_z), collection)
-    rear_bumper = create_box("rear_bumper", (spec["width"] * 0.92, 0.16, 0.14), (0.0, ride + 0.28, rear_z), collection)
+    front_y = max(y for y, _ in body_profile) + 0.02
+    rear_y = min(y for y, _ in body_profile) - 0.02
+    front_bumper = create_box("front_bumper", (spec["width"] * 0.92, 0.16, 0.18), (0.0, front_y, ride + 0.28), collection)
+    rear_bumper = create_box("rear_bumper", (spec["width"] * 0.92, 0.14, 0.16), (0.0, rear_y, ride + 0.28), collection)
     assign(front_bumper, mats["Trim"])
     assign(rear_bumper, mats["Trim"])
     parent_keep(front_bumper, root)
     parent_keep(rear_bumper, root)
 
     if spec["grille"] == "oval":
-        grille = create_cylinder("grille", 0.28, 0.06, (0.0, ride + 0.48, front_z + 0.02), collection, rotation=(math.pi / 2, 0, 0), segments=24)
-        grille.scale = (1.6, 1.0, 0.7)
+        grille = create_cylinder(
+            "grille", 0.28, 0.06, (0.0, front_y + 0.02, ride + 0.48), collection,
+            rotation=(math.pi / 2, 0, 0), segments=24
+        )
+        grille.scale = (1.6, 0.7, 1.0)
         apply_transform(grille)
         assign(grille, mats["Chrome"])
         parent_keep(grille, root)
-        bar = create_box("grille_bar", (0.9, 0.04, 0.04), (0.0, ride + 0.42, front_z + 0.03), collection)
+        bar = create_box("grille_bar", (0.9, 0.04, 0.04), (0.0, front_y + 0.03, ride + 0.42), collection)
         assign(bar, mats["Chrome"])
         parent_keep(bar, root)
     elif spec["grille"] == "mesh":
-        grille = create_box("grille", (0.85, 0.22, 0.05), (0.0, ride + 0.38, front_z + 0.02), collection)
+        grille = create_box("grille", (0.85, 0.05, 0.22), (0.0, front_y + 0.02, ride + 0.38), collection)
         assign(grille, mats["Dark"])
         parent_keep(grille, root)
         for i, x in enumerate((-0.28, 0.0, 0.28)):
-            bar = create_box(f"grille_bar_{i}", (0.04, 0.18, 0.03), (x, ride + 0.38, front_z + 0.04), collection)
+            bar = create_box(f"grille_bar_{i}", (0.04, 0.03, 0.18), (x, front_y + 0.04, ride + 0.38), collection)
             assign(bar, mats["Chrome"])
             parent_keep(bar, root)
     elif spec["grille"] == "vent":
         for i, x in enumerate((-0.45, -0.15, 0.15, 0.45)):
-            vent = create_box(f"vent_{i}", (0.22, 0.10, 0.05), (x, ride + 0.28, front_z + 0.01), collection)
+            vent = create_box(f"vent_{i}", (0.22, 0.05, 0.10), (x, front_y + 0.01, ride + 0.28), collection)
             assign(vent, mats["Dark"])
             parent_keep(vent, root)
     else:
-        grille = create_box("grille", (0.95, 0.12, 0.05), (0.0, ride + 0.36, front_z + 0.02), collection)
+        grille = create_box("grille", (0.95, 0.05, 0.12), (0.0, front_y + 0.02, ride + 0.36), collection)
         assign(grille, mats["Dark"])
         parent_keep(grille, root)
 
-    light_y = ride + 0.55
+    light_z = ride + 0.55
     if spec["headlights"] == "round":
         for side, sx in ((-1.0, -0.55), (1.0, 0.55)):
             for j, ox in enumerate((-0.12, 0.12)):
-                lamp = create_sphere(f"headlight_{'L' if side < 0 else 'R'}_{j}", 0.09, (sx + ox * side, light_y + 0.08, front_z + 0.01), collection)
+                lamp = create_sphere(
+                    f"headlight_{'L' if side < 0 else 'R'}_{j}", 0.09,
+                    (sx + ox * side, front_y + 0.01, light_z + 0.08), collection
+                )
                 assign(lamp, mats["LightHead"])
                 smooth(lamp)
                 parent_keep(lamp, root)
-            ind = create_sphere(f"indicator_{'L' if side < 0 else 'R'}", 0.06, (sx * 1.15, light_y - 0.08, front_z + 0.01), collection, segments=10, rings=6)
+            ind = create_sphere(
+                f"indicator_{'L' if side < 0 else 'R'}", 0.06,
+                (sx * 1.15, front_y + 0.01, light_z - 0.08), collection, segments=10, rings=6
+            )
             assign(ind, mats["Indicator"])
             parent_keep(ind, root)
     elif spec["headlights"] == "quad":
         for side, sx in ((-1.0, -0.52), (1.0, 0.52)):
-            lamp = create_box(f"headlight_{'L' if side < 0 else 'R'}", (0.42, 0.14, 0.05), (sx, light_y + 0.05, front_z + 0.01), collection)
+            lamp = create_box(
+                f"headlight_{'L' if side < 0 else 'R'}", (0.42, 0.05, 0.14),
+                (sx, front_y + 0.01, light_z + 0.05), collection
+            )
             assign(lamp, mats["LightHead"])
             parent_keep(lamp, root)
-            fog = create_sphere(f"fog_{'L' if side < 0 else 'R'}", 0.08, (sx, light_y - 0.14, front_z + 0.02), collection)
+            fog = create_sphere(f"fog_{'L' if side < 0 else 'R'}", 0.08, (sx, front_y + 0.02, light_z - 0.14), collection)
             assign(fog, mats["LightHead"])
             parent_keep(fog, root)
     elif spec["headlights"] == "pop":
         for side, sx in ((-1.0, -0.48), (1.0, 0.48)):
             housing = create_box(
                 f"head_housing_{'L' if side < 0 else 'R'}",
-                (0.38, 0.10, 0.36),
-                (sx, ride + 0.62, front_z - 0.25),
+                (0.38, 0.36, 0.10),
+                (sx, front_y - 0.25, ride + 0.62),
                 collection,
                 rotation=(-0.18, 0.0, 0.0),
             )
@@ -535,8 +556,8 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
             parent_keep(housing, root)
             lamp = create_box(
                 f"headlight_{'L' if side < 0 else 'R'}",
-                (0.32, 0.06, 0.04),
-                (sx, ride + 0.64, front_z - 0.08),
+                (0.32, 0.04, 0.06),
+                (sx, front_y - 0.08, ride + 0.64),
                 collection,
                 rotation=(-0.18, 0.0, 0.0),
             )
@@ -544,76 +565,108 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
             parent_keep(lamp, root)
     else:
         for side, sx in ((-1.0, -0.52), (1.0, 0.52)):
-            lamp = create_box(f"headlight_{'L' if side < 0 else 'R'}", (0.40, 0.12, 0.05), (sx, light_y, front_z + 0.01), collection)
+            lamp = create_box(
+                f"headlight_{'L' if side < 0 else 'R'}", (0.40, 0.05, 0.12),
+                (sx, front_y + 0.01, light_z), collection
+            )
             assign(lamp, mats["LightHead"])
             parent_keep(lamp, root)
-            ind = create_box(f"indicator_{'L' if side < 0 else 'R'}", (0.12, 0.08, 0.04), (sx * 1.28, light_y - 0.02, front_z + 0.01), collection)
+            ind = create_box(
+                f"indicator_{'L' if side < 0 else 'R'}", (0.12, 0.04, 0.08),
+                (sx * 1.28, front_y + 0.01, light_z - 0.02), collection
+            )
             assign(ind, mats["Indicator"])
             parent_keep(ind, root)
 
     if spec["class"] == "turbo_hatch":
         for side, sx in ((-1.0, -0.62), (1.0, 0.62)):
-            lamp = create_box(f"brake_light_{'L' if side < 0 else 'R'}", (0.18, 0.32, 0.05), (sx, ride + 0.72, rear_z - 0.01), collection)
+            lamp = create_box(
+                f"brake_light_{'L' if side < 0 else 'R'}", (0.18, 0.05, 0.32),
+                (sx, rear_y - 0.01, ride + 0.72), collection
+            )
             assign(lamp, mats["LightTail"])
             parent_keep(lamp, root)
     elif spec["class"] == "grand_tourer":
         for side, sx in ((-1.0, -0.58), (1.0, 0.58)):
-            lamp = create_sphere(f"brake_light_{'L' if side < 0 else 'R'}", 0.14, (sx, ride + 0.58, rear_z - 0.01), collection)
-            lamp.scale = (1.0, 0.7, 0.4)
+            lamp = create_sphere(
+                f"brake_light_{'L' if side < 0 else 'R'}", 0.14,
+                (sx, rear_y - 0.01, ride + 0.58), collection
+            )
+            lamp.scale = (1.0, 0.4, 0.7)
             apply_transform(lamp)
             assign(lamp, mats["LightTail"])
             parent_keep(lamp, root)
-        chrome = create_box("rear_chrome", (0.7, 0.04, 0.03), (0.0, ride + 0.72, rear_z - 0.02), collection)
+        chrome = create_box("rear_chrome", (0.7, 0.03, 0.04), (0.0, rear_y - 0.02, ride + 0.72), collection)
         assign(chrome, mats["Chrome"])
         parent_keep(chrome, root)
     else:
         for side, sx in ((-1.0, -0.55), (1.0, 0.55)):
-            lamp = create_box(f"brake_light_{'L' if side < 0 else 'R'}", (0.42, 0.12, 0.05), (sx, ride + 0.58, rear_z - 0.01), collection)
+            lamp = create_box(
+                f"brake_light_{'L' if side < 0 else 'R'}", (0.42, 0.05, 0.12),
+                (sx, rear_y - 0.01, ride + 0.58), collection
+            )
             assign(lamp, mats["LightTail"])
             parent_keep(lamp, root)
 
     if spec["hood_scoop"]:
-        scoop = create_box("hood_scoop", (0.42, 0.08, 0.36), (0.0, ride + 0.92, 0.85), collection, rotation=(-0.12, 0.0, 0.0))
+        scoop = create_box(
+            "hood_scoop", (0.42, 0.36, 0.08), (0.0, 0.85, ride + 0.92), collection, rotation=(-0.12, 0.0, 0.0)
+        )
         assign(scoop, mats["Trim"])
         parent_keep(scoop, root)
 
     if spec["spoiler"]:
-        wing_z = rear_z + 0.35 if spec["class"] == "turbo_hatch" else rear_z + 0.55
-        wing_y = cabin_top_y + 0.08 if spec["class"] == "turbo_hatch" else ride + 0.95
-        wing = create_box("spoiler_wing", (spec["width"] * 0.78, 0.05, 0.22), (0.0, wing_y, wing_z), collection, rotation=(-0.08, 0.0, 0.0))
+        wing_y = rear_y + 0.35 if spec["class"] == "turbo_hatch" else rear_y + 0.55
+        wing_z = cabin_top_z + 0.08 if spec["class"] == "turbo_hatch" else ride + 0.95
+        wing = create_box(
+            "spoiler_wing", (spec["width"] * 0.78, 0.22, 0.05), (0.0, wing_y, wing_z), collection, rotation=(-0.08, 0.0, 0.0)
+        )
         assign(wing, mats["BodyPaint"])
         parent_keep(wing, root)
         for side, sx in ((-1.0, -0.45), (1.0, 0.45)):
-            stand = create_box(f"spoiler_stand_{'L' if side < 0 else 'R'}", (0.05, 0.18, 0.06), (sx, wing_y - 0.12, wing_z + 0.02), collection)
+            stand = create_box(
+                f"spoiler_stand_{'L' if side < 0 else 'R'}", (0.05, 0.06, 0.18),
+                (sx, wing_y + 0.02, wing_z - 0.12), collection
+            )
             assign(stand, mats["Trim"])
             parent_keep(stand, root)
 
     for side, sx in ((-1.0, -half_w - 0.06), (1.0, half_w + 0.06)):
-        mirror = create_box(f"mirror_{'L' if side < 0 else 'R'}", (0.14, 0.08, 0.18), (sx, ride + 0.95, 0.35), collection)
+        mirror = create_box(
+            f"mirror_{'L' if side < 0 else 'R'}", (0.14, 0.18, 0.08),
+            (sx, 0.35, ride + 0.95), collection
+        )
         assign(mirror, mats["BodyPaint"])
         parent_keep(mirror, root)
 
     for i, x in enumerate(spec["exhausts"]):
-        ex = create_cylinder(f"exhaust_{i}", 0.055, 0.18, (x, ride + 0.22, rear_z - 0.08), collection, rotation=(math.pi / 2, 0, 0), segments=12)
+        ex = create_cylinder(
+            f"exhaust_{i}", 0.055, 0.18, (x, rear_y - 0.08, ride + 0.22), collection,
+            rotation=(math.pi / 2, 0, 0), segments=12
+        )
         assign(ex, mats["Chrome"])
         parent_keep(ex, root)
 
-    under = create_box("undertray", (spec["width"] * 0.85, 0.06, spec["length"] * 0.85), (0.0, ride + 0.12, 0.0), collection)
+    under = create_box(
+        "undertray", (spec["width"] * 0.85, spec["length"] * 0.85, 0.06),
+        (0.0, 0.0, ride + 0.12), collection
+    )
     assign(under, mats["Dark"])
     parent_keep(under, root)
 
     wr = spec["wheel_radius"]
     wx = spec["wheel_x"]
+    # Blender positions: (x, y_forward, z_up)
     for wname, loc in (
-        ("wheel_fl", (-wx, wr, spec["front_axle"])),
-        ("wheel_fr", (wx, wr, spec["front_axle"])),
-        ("wheel_rl", (-wx, wr, spec["rear_axle"])),
-        ("wheel_rr", (wx, wr, spec["rear_axle"])),
+        ("wheel_fl", (-wx, spec["front_axle"], wr)),
+        ("wheel_fr", (wx, spec["front_axle"], wr)),
+        ("wheel_rl", (-wx, spec["rear_axle"], wr)),
+        ("wheel_rr", (wx, spec["rear_axle"], wr)),
     ):
         wheel = build_wheel(wname, loc, wr, spec["wheel_width"], collection, mats)
         parent_keep(wheel, root)
 
-    meta = empty("collision_meta", (0.0, 0.5, 0.0), collection)
+    meta = empty("collision_meta", (0.0, 0.0, 0.5), collection)
     meta["half_extent_x"] = half_w * 0.96
     meta["half_extent_y"] = 0.42
     meta["half_extent_z"] = spec["length"] * 0.47

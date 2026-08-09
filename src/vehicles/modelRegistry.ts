@@ -147,8 +147,13 @@ export function instantiateVehicleModel(vehicleId: VehicleId, color: string): In
     throw new Error(`Vehicle model "${vehicleId}" is not loaded. Call preloadVehicleModels() first.`);
   }
 
-  const root = template.clone(true) as THREE.Group;
+  // Blender +Y forward exports as glTF -Z; gameplay forward is +Z.
+  const root = new THREE.Group();
   root.name = `car_${vehicleId}`;
+  const visual = template.clone(true);
+  visual.rotation.y = Math.PI;
+  visual.updateMatrixWorld(true);
+  root.add(visual);
   cloneMaterials(root);
 
   const bodyMaterials = collectBodyMaterials(root);
