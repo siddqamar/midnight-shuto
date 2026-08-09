@@ -129,14 +129,18 @@ try {
     await page.keyboard.down('d');
     await page.keyboard.down('Space');
     let drifted = false;
-    for (let sample = 0; sample < 10; sample += 1) {
+    // Allow the real renderer enough fixed-step frames to build lateral slip.
+    // A one-second window was timing-sensitive in headless Chromium.
+    for (let sample = 0; sample < 20; sample += 1) {
       await page.waitForTimeout(100);
       const driftSnapshot = await page.evaluate(() => window.__shutoDebug?.());
       drifted ||= Boolean(driftSnapshot?.telemetry.drifting);
     }
     await page.keyboard.up('Space');
     await page.keyboard.up('d');
-    await page.waitForTimeout(1800);
+    // Recovery is sampled after the handbrake and steering keyup events have
+    // propagated through the renderer and physics loop.
+    await page.waitForTimeout(2200);
     const recoverySnapshot = await page.evaluate(() => window.__shutoDebug?.());
     await page.keyboard.up('w');
 

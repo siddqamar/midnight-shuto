@@ -352,12 +352,17 @@ def build_wheel(
     # Default cylinder is along Z; rotate to axle along X (sideways)
     axle_rot = (0.0, math.pi / 2, 0.0)
 
-    tire = create_cylinder(f"{name}_tire", radius, width, (0, 0, 0), collection, rotation=axle_rot, segments=24)
+    tire = create_cylinder(f"{name}_tire", radius, width, (0, 0, 0), collection, rotation=axle_rot, segments=32)
     assign(tire, mats["Rubber"])
     smooth(tire)
     parent_keep(tire, root)
 
-    rim = create_cylinder(f"{name}_rim", radius * 0.58, width * 0.55, (0, 0, 0), collection, rotation=axle_rot, segments=18)
+    sidewall = create_cylinder(f"{name}_sidewall", radius * 0.88, width * 1.015, (0, 0, 0), collection, rotation=axle_rot, segments=32)
+    assign(sidewall, mats["TireWall"])
+    smooth(sidewall)
+    parent_keep(sidewall, root)
+
+    rim = create_cylinder(f"{name}_rim", radius * 0.62, width * 0.58, (0, 0, 0), collection, rotation=axle_rot, segments=24)
     assign(rim, mats["Rim"])
     smooth(rim)
     parent_keep(rim, root)
@@ -366,12 +371,19 @@ def build_wheel(
     assign(hub, mats["Chrome"])
     parent_keep(hub, root)
 
-    disc = create_cylinder(f"{name}_disc", radius * 0.42, width * 0.08, (0, 0, 0), collection, rotation=axle_rot, segments=14)
+    disc = create_cylinder(f"{name}_disc", radius * 0.46, width * 0.1, (0, 0, 0), collection, rotation=axle_rot, segments=20)
     assign(disc, mats["Brake"])
     parent_keep(disc, root)
 
-    for i in range(5):
-        angle = (i / 5.0) * math.tau
+    caliper = create_box(
+        f"{name}_caliper", (width * 0.16, radius * 0.22, radius * 0.36),
+        (width * 0.42, radius * 0.14, 0.0), collection
+    )
+    assign(caliper, mats["Caliper"])
+    parent_keep(caliper, root)
+
+    for i in range(7):
+        angle = (i / 7.0) * math.tau
         spoke = create_box(
             f"{name}_spoke_{i}",
             (width * 0.12, radius * 0.08, radius * 0.55),
@@ -382,6 +394,14 @@ def build_wheel(
         assign(spoke, mats["Rim"])
         parent_keep(spoke, root)
 
+        lug = create_cylinder(
+            f"{name}_lug_{i}", radius * 0.052, width * 0.68,
+            (0.0, math.sin(angle) * radius * 0.18, math.cos(angle) * radius * 0.18),
+            collection, rotation=axle_rot, segments=8
+        )
+        assign(lug, mats["Chrome"])
+        parent_keep(lug, root)
+
     return root
 
 
@@ -391,13 +411,16 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
     root = empty("CarRoot", (0.0, 0.0, 0.0), collection)
 
     mats = {
-        "BodyPaint": make_material("BodyPaint", spec["paint"], metallic=0.58, roughness=0.26),
-        "Glass": make_material("Glass", (0.05, 0.08, 0.12, 0.7), metallic=0.15, roughness=0.08, alpha=0.7),
+        "BodyPaint": make_material("BodyPaint", spec["paint"], metallic=0.64, roughness=0.2),
+        "Glass": make_material("Glass", (0.035, 0.075, 0.12, 0.74), metallic=0.28, roughness=0.07, alpha=0.74),
         "Trim": make_material("Trim", (0.06, 0.07, 0.09, 1.0), metallic=0.35, roughness=0.55),
         "Chrome": make_material("Chrome", (0.85, 0.88, 0.90, 1.0), metallic=0.95, roughness=0.16),
         "Rubber": make_material("Rubber", (0.03, 0.03, 0.035, 1.0), metallic=0.0, roughness=0.95),
+        "TireWall": make_material("TireWall", (0.08, 0.085, 0.095, 1.0), metallic=0.02, roughness=0.72),
         "Rim": make_material("Rim", spec["rim"], metallic=0.85, roughness=0.28),
         "Brake": make_material("Brake", (0.35, 0.36, 0.38, 1.0), metallic=0.7, roughness=0.45),
+        "Caliper": make_material("Caliper", (0.68, 0.045, 0.06, 1.0), metallic=0.58, roughness=0.24),
+        "Interior": make_material("Interior", (0.022, 0.028, 0.04, 1.0), metallic=0.08, roughness=0.62),
         "LightHead": make_material(
             "LightHead",
             (0.9, 0.94, 1.0, 1.0),
@@ -476,6 +499,41 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
         assign(pillar, mats["BodyPaint"])
         parent_keep(pillar, root)
 
+        handle = create_box(
+            f"door_handle_{'L' if side < 0 else 'R'}", (0.10, 0.20, 0.035),
+            (side * (half_w + 0.012), -0.28, ride + 0.66), collection
+        )
+        assign(handle, mats["Chrome"])
+        parent_keep(handle, root)
+
+        vent = create_box(
+            f"side_vent_{'L' if side < 0 else 'R'}", (0.025, 0.30, 0.12),
+            (side * (half_w + 0.008), 0.95, ride + 0.44), collection
+        )
+        assign(vent, mats["Dark"])
+        parent_keep(vent, root)
+
+    for side in (-1.0, 1.0):
+        seat_base = create_box(
+            f"seat_base_{'L' if side < 0 else 'R'}", (0.34, 0.42, 0.14),
+            (side * half_w * 0.32, -0.18, ride + 0.67), collection
+        )
+        seat_back = create_box(
+            f"seat_back_{'L' if side < 0 else 'R'}", (0.34, 0.16, 0.44),
+            (side * half_w * 0.32, -0.42, ride + 0.84), collection, rotation=(-0.18, 0.0, 0.0)
+        )
+        assign(seat_base, mats["Interior"])
+        assign(seat_back, mats["Interior"])
+        parent_keep(seat_base, root)
+        parent_keep(seat_back, root)
+
+    dashboard = create_box("dashboard", (spec["width"] * 0.62, 0.22, 0.16), (0.0, 0.42, ride + 0.93), collection)
+    steering = create_cylinder("steering_wheel", 0.16, 0.035, (-half_w * 0.3, 0.23, ride + 0.92), collection, rotation=(math.pi / 2, 0, 0), segments=18)
+    assign(dashboard, mats["Interior"])
+    assign(steering, mats["Trim"])
+    parent_keep(dashboard, root)
+    parent_keep(steering, root)
+
     front_y = max(y for y, _ in body_profile) + 0.02
     rear_y = min(y for y, _ in body_profile) - 0.02
     front_bumper = create_box("front_bumper", (spec["width"] * 0.92, 0.16, 0.18), (0.0, front_y, ride + 0.28), collection)
@@ -484,6 +542,13 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
     assign(rear_bumper, mats["Trim"])
     parent_keep(front_bumper, root)
     parent_keep(rear_bumper, root)
+
+    splitter = create_box("front_splitter", (spec["width"] * 0.9, 0.25, 0.055), (0.0, front_y + 0.1, ride + 0.13), collection)
+    diffuser = create_box("rear_diffuser", (spec["width"] * 0.82, 0.22, 0.07), (0.0, rear_y - 0.08, ride + 0.15), collection)
+    assign(splitter, mats["Dark"])
+    assign(diffuser, mats["Dark"])
+    parent_keep(splitter, root)
+    parent_keep(diffuser, root)
 
     if spec["grille"] == "oval":
         grille = create_cylinder(

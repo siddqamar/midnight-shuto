@@ -32,6 +32,76 @@ function cloneMaterials(root: THREE.Object3D): void {
   });
 }
 
+function upgradeMaterials(root: THREE.Object3D): void {
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    const upgraded = materials.map((material) => {
+      if (!(material instanceof THREE.MeshStandardMaterial)) return material;
+
+      if (material.name === 'BodyPaint') {
+        const paint = new THREE.MeshPhysicalMaterial({
+          color: material.color,
+          metalness: Math.max(material.metalness, 0.58),
+          roughness: Math.min(material.roughness, 0.21),
+          clearcoat: 0.92,
+          clearcoatRoughness: 0.1,
+          envMapIntensity: 1.15
+        });
+        paint.name = material.name;
+        return paint;
+      }
+
+      if (material.name === 'Glass') {
+        material.color.setRGB(0.035, 0.075, 0.12);
+        material.metalness = 0.42;
+        material.roughness = 0.1;
+        material.transparent = true;
+        material.opacity = 0.76;
+        material.envMapIntensity = 1.25;
+        material.depthWrite = false;
+      } else if (material.name === 'LightHead') {
+        material.color.setHex(0xddeeff);
+        material.emissive.setHex(0x8fc9ff);
+        material.emissiveIntensity = Math.max(material.emissiveIntensity, 2.8);
+        material.roughness = 0.14;
+      } else if (material.name === 'LightTail') {
+        material.color.setHex(0xff243f);
+        material.emissive.setHex(0xa7071f);
+        material.emissiveIntensity = Math.max(material.emissiveIntensity, 2.1);
+      } else if (material.name === 'Chrome' || material.name === 'Rim') {
+        material.metalness = Math.max(material.metalness, 0.88);
+        material.roughness = Math.min(material.roughness, 0.2);
+        material.envMapIntensity = 1.3;
+      }
+      return material;
+    });
+    child.material = Array.isArray(child.material) ? upgraded : upgraded[0];
+  });
+}
+
+function addHeadlightRig(root: THREE.Group, extents: THREE.Vector3): void {
+  const rig = new THREE.Group();
+  rig.name = 'headlight_rig';
+  const lensMaterial = new THREE.MeshBasicMaterial({ color: 0xc8e6ff, transparent: true, opacity: 0.55 });
+  const front = extents.z + 0.035;
+
+  for (const side of [-1, 1]) {
+    const lens = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), lensMaterial);
+    lens.position.set(side * (extents.x * 0.64), 0.48, front);
+    lens.scale.set(1.45, 0.55, 0.45);
+    rig.add(lens);
+
+    const light = new THREE.SpotLight(0xb8dcff, 22, 30, 0.38, 0.78, 2);
+    light.position.set(side * (extents.x * 0.58), 0.52, front - 0.03);
+    light.target.position.set(side * 0.7, 0.05, 13);
+    light.castShadow = false;
+    rig.add(light, light.target);
+  }
+
+  root.add(rig);
+}
+
 function collectBodyMaterials(root: THREE.Object3D): THREE.MeshStandardMaterial[] {
   const paints: THREE.MeshStandardMaterial[] = [];
   root.traverse((child) => {
@@ -155,6 +225,7 @@ export function instantiateVehicleModel(vehicleId: VehicleId, color: string): In
   visual.updateMatrixWorld(true);
   root.add(visual);
   cloneMaterials(root);
+  upgradeMaterials(root);
 
   const bodyMaterials = collectBodyMaterials(root);
   for (const material of bodyMaterials) {
@@ -184,6 +255,8 @@ export function instantiateVehicleModel(vehicleId: VehicleId, color: string): In
       light.material.emissiveIntensity = Math.max(light.material.emissiveIntensity, 1.5);
     }
   }
+
+  addHeadlightRig(root, halfExtents[vehicleId]);
 
   return {
     root,

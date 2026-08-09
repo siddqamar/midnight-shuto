@@ -12,14 +12,14 @@ const script = path.join(root, 'tools', 'blender', 'build_cars.py');
 
 const candidates = [
   process.env.BLENDER_PATH,
-  'blender',
   'C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe',
   'C:\\Program Files\\Blender Foundation\\Blender 5.1\\blender.exe',
   'C:\\Program Files\\Blender Foundation\\Blender 5.0\\blender.exe',
   'C:\\Program Files\\Blender Foundation\\Blender 4.5\\blender.exe',
   'C:\\Program Files\\Blender Foundation\\Blender 4.2\\blender.exe',
   '/usr/bin/blender',
-  '/Applications/Blender.app/Contents/MacOS/Blender'
+  '/Applications/Blender.app/Contents/MacOS/Blender',
+  'blender'
 ].filter(Boolean);
 
 function resolveBlender() {
