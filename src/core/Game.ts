@@ -224,26 +224,42 @@ export class Game {
 
   private exposeDebugSnapshot(): void {
     if (!new URLSearchParams(window.location.search).has('debug')) return;
-    const debugWindow = window as unknown as { __shutoDebug: () => unknown };
-    debugWindow.__shutoDebug = () => ({
-      state: this.state,
-      throttle: this.lastInputThrottle,
-      body: {
-        type: this.vehicle.body.type,
-        mass: this.vehicle.body.mass,
-        position: { ...this.vehicle.body.position },
-        velocity: { ...this.vehicle.body.velocity },
-        force: { ...this.vehicle.body.force },
-        sleeping: this.vehicle.body.sleepState
-      },
-      contacts: this.physics.contacts
-        .filter((contact) => contact.bi === this.vehicle.body || contact.bj === this.vehicle.body)
-        .map((contact) => ({
-          other: contact.bi === this.vehicle.body ? contact.bj.id : contact.bi.id,
-          normal: { ...contact.ni },
-          otherPosition: contact.bi === this.vehicle.body ? { ...contact.bj.position } : { ...contact.bi.position }
-        }))
-    });
+    const debugWindow = window as unknown as { __shutoDebug: () => unknown; __shutoReset: () => void };
+    debugWindow.__shutoReset = () => this.vehicle.reset(0, 0, 0);
+    debugWindow.__shutoDebug = () => {
+      const telemetry = this.vehicle.getTelemetry();
+      return {
+        state: this.state,
+        throttle: this.lastInputThrottle,
+        telemetry: {
+          speedKph: telemetry.speedKph,
+          slip: telemetry.slip,
+          drifting: telemetry.drifting
+        },
+        feedback: {
+          cameraFov: this.camera.camera.fov,
+          cameraIntensity: this.camera.feedbackIntensity,
+          audioIntensity: this.audio.feedbackIntensity
+        },
+        body: {
+          type: this.vehicle.body.type,
+          mass: this.vehicle.body.mass,
+          position: { ...this.vehicle.body.position },
+          velocity: { ...this.vehicle.body.velocity },
+          angularVelocity: { ...this.vehicle.body.angularVelocity },
+          quaternion: { ...this.vehicle.body.quaternion },
+          force: { ...this.vehicle.body.force },
+          sleeping: this.vehicle.body.sleepState
+        },
+        contacts: this.physics.contacts
+          .filter((contact) => contact.bi === this.vehicle.body || contact.bj === this.vehicle.body)
+          .map((contact) => ({
+            other: contact.bi === this.vehicle.body ? contact.bj.id : contact.bi.id,
+            normal: { ...contact.ni },
+            otherPosition: contact.bi === this.vehicle.body ? { ...contact.bj.position } : { ...contact.bi.position }
+          }))
+      };
+    };
   }
 
   private frame = (now: number): void => {

@@ -4,15 +4,16 @@ export type Weather = 'sunny' | 'sunset' | 'night' | 'rain';
 export type Difficulty = 'easy' | 'medium' | 'hard';
 export type CameraMode = 'CHASE' | 'FAR' | 'HOOD' | 'DASH' | 'COCKPIT' | 'ORBIT' | 'FREE';
 export type MissionKind = 'sprint' | 'checkpoint' | 'drift';
+export type VehicleId = 'kaze' | 'michi' | 'raiden' | 'shogun';
 
 export interface VehicleSpec {
-  id: string;
+  id: VehicleId;
   name: string;
   className: string;
   description: string;
   color: string;
   accent: string;
-  topSpeed: number;
+  topSpeedKph: number;
   acceleration: number;
   handling: number;
   braking: number;

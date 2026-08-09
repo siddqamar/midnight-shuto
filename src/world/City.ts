@@ -373,6 +373,7 @@ export class City {
     const lampMaterial = new THREE.MeshBasicMaterial({ color: 0xffe8b5, toneMapped: false });
     const positions: Array<{ pole: THREE.Vector3; lamp: THREE.Vector3 }> = [];
     for (let coordinate = -600; coordinate <= 600; coordinate += 60) {
+      if (coordinate % ROAD_SPACING === 0) continue;
       for (const offset of [-16.5, 16.5]) {
         positions.push(
           {

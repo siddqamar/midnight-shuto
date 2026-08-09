@@ -1,5 +1,5 @@
 import type { VehicleTelemetry, Weather } from '../core/types';
-import { damp } from '../utils/math';
+import { damp, speedEffectIntensity } from '../utils/math';
 
 export class AudioSystem {
   private context?: AudioContext;
@@ -8,8 +8,14 @@ export class AudioSystem {
   private engineOsc?: OscillatorNode;
   private engineHarmonic?: OscillatorNode;
   private noiseGain?: GainNode;
+  private noiseFilter?: BiquadFilterNode;
   private started = false;
   private currentFrequency = 60;
+  private speedEffectLevel = 0;
+
+  get feedbackIntensity(): number {
+    return this.speedEffectLevel;
+  }
 
   async start(volume: number): Promise<void> {
     if (!this.context) this.createGraph(volume);
@@ -22,15 +28,19 @@ export class AudioSystem {
   }
 
   update(dt: number, telemetry: VehicleTelemetry, throttle: number, weather: Weather): void {
-    if (!this.started || !this.context || !this.engineOsc || !this.engineHarmonic || !this.engineGain || !this.noiseGain) return;
-    const target = 48 + telemetry.rpm * 0.035;
+    this.speedEffectLevel = speedEffectIntensity(telemetry.speedKph);
+    if (!this.started || !this.context || !this.engineOsc || !this.engineHarmonic || !this.engineGain || !this.noiseGain || !this.noiseFilter) return;
+    const target = (48 + telemetry.rpm * 0.035) * (1 + this.speedEffectLevel * 0.1);
     this.currentFrequency = damp(this.currentFrequency, target, 9, dt);
     const now = this.context.currentTime;
     this.engineOsc.frequency.setTargetAtTime(this.currentFrequency, now, 0.03);
     this.engineHarmonic.frequency.setTargetAtTime(this.currentFrequency * 2.04, now, 0.035);
-    this.engineGain.gain.setTargetAtTime(0.055 + throttle * 0.1 + telemetry.speedKph * 0.00035, now, 0.04);
-    const tire = telemetry.drifting ? Math.min(0.19, telemetry.slip * 0.16) : weather === 'rain' ? 0.018 : 0.006;
-    this.noiseGain.gain.setTargetAtTime(tire, now, 0.045);
+    this.engineGain.gain.setTargetAtTime(0.055 + throttle * 0.1 + telemetry.speedKph * 0.00035 + this.speedEffectLevel * 0.045, now, 0.04);
+    const tire = telemetry.drifting ? Math.min(0.16, telemetry.slip * 0.15) : weather === 'rain' ? 0.018 : 0.006;
+    const road = Math.min(0.025, telemetry.speedKph * 0.00013);
+    const wind = this.speedEffectLevel * 0.085;
+    this.noiseGain.gain.setTargetAtTime(Math.min(0.22, tire + road + wind), now, 0.045);
+    this.noiseFilter.frequency.setTargetAtTime(1900 + this.speedEffectLevel * 2300, now, 0.08);
   }
 
   collision(strength: number): void {
@@ -94,11 +104,11 @@ export class AudioSystem {
     noise.loop = true;
     this.noiseGain = this.context.createGain();
     this.noiseGain.gain.value = 0.001;
-    const noiseFilter = this.context.createBiquadFilter();
-    noiseFilter.type = 'bandpass';
-    noiseFilter.frequency.value = 2400;
-    noiseFilter.Q.value = 0.7;
-    noise.connect(noiseFilter).connect(this.noiseGain).connect(this.master);
+    this.noiseFilter = this.context.createBiquadFilter();
+    this.noiseFilter.type = 'bandpass';
+    this.noiseFilter.frequency.value = 1900;
+    this.noiseFilter.Q.value = 0.7;
+    noise.connect(this.noiseFilter).connect(this.noiseGain).connect(this.master);
     noise.start();
   }
 }

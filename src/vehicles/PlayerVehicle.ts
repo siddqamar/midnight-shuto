@@ -19,15 +19,19 @@ export class PlayerVehicle {
   constructor(world: CANNON.World, scene: THREE.Scene, spec: VehicleSpec, color: string) {
     this.spec = spec;
     this.group = new THREE.Group();
-    this.model = createCarModel(color, spec.accent);
+    this.model = createCarModel(spec.id, color, spec.accent);
     this.group.add(this.model);
     scene.add(this.group);
 
     this.body = new CANNON.Body({
       mass: 1180,
-      shape: new CANNON.Box(new CANNON.Vec3(1.02, 0.4, 2.16)),
+      shape: new CANNON.Box(new CANNON.Vec3(
+        this.model.userData.collisionHalfExtents.x,
+        this.model.userData.collisionHalfExtents.y,
+        this.model.userData.collisionHalfExtents.z
+      )),
       position: new CANNON.Vec3(0, 0.62, 0),
-      linearDamping: 0.08,
+      linearDamping: 0.025,
       angularDamping: 0.78,
       material: new CANNON.Material({ friction: 0, restitution: 0.05 })
     });
@@ -48,12 +52,19 @@ export class PlayerVehicle {
   setSpec(spec: VehicleSpec, color: string): void {
     this.spec = spec;
     this.group.remove(this.model);
-    this.model = createCarModel(color, spec.accent);
+    this.model = createCarModel(spec.id, color, spec.accent);
     this.group.add(this.model);
+    const previousShape = this.body.shapes[0];
+    if (previousShape) this.body.removeShape(previousShape);
+    const halfExtents = this.model.userData.collisionHalfExtents;
+    this.body.addShape(new CANNON.Box(new CANNON.Vec3(halfExtents.x, halfExtents.y, halfExtents.z)));
+    this.body.updateMassProperties();
+    this.body.updateBoundingRadius();
   }
 
   setColor(color: string): void {
-    this.model.userData.bodyMaterial.color.set(color);
+    const paints = this.model.userData.bodyMaterials ?? [this.model.userData.bodyMaterial];
+    for (const material of paints) material.color.set(color);
   }
 
   prePhysics(dt: number, input: InputState, enabled: boolean): void {
@@ -65,38 +76,38 @@ export class PlayerVehicle {
     const lateralSpeed = velocity.dot(localRight);
     this.slip = Math.abs(lateralSpeed) / Math.max(3, Math.abs(this.speedForward));
 
-    const normalizedSpeed = clamp(Math.abs(this.speedForward) / this.spec.topSpeed, 0, 1);
+    const targetSpeed = this.spec.topSpeedKph / 3.6;
+    const normalizedSpeed = clamp(Math.abs(this.speedForward) / targetSpeed, 0, 1);
     const movingForward = this.speedForward > 1.5;
     const movingBackward = this.speedForward < -1.5;
     let drive = 0;
 
     if (this.lastInput.throttle > 0 && !movingBackward) drive += this.lastInput.throttle;
-    else if (this.lastInput.throttle > 0) this.applyLongitudinalBrake(0.9);
+    else if (this.lastInput.throttle > 0) this.applyLongitudinalBrake(0.9 * this.lastInput.throttle, dt);
     if (this.lastInput.brake > 0 && !movingForward) drive -= this.lastInput.brake * 0.58;
-    else if (this.lastInput.brake > 0) this.applyLongitudinalBrake(this.spec.braking);
+    else if (this.lastInput.brake > 0) this.applyLongitudinalBrake(this.spec.braking * this.lastInput.brake, dt);
 
-    const speedLimiter = drive > 0 ? 1 - Math.pow(normalizedSpeed, 3.2) : 1;
-    const force = localForward.scale(drive * this.spec.acceleration * speedLimiter);
-    this.body.applyForce(force, new CANNON.Vec3(0, 0, 0));
+    const reverseSpeed = 48 / 3.6;
+    const speedLimiter = drive > 0
+      ? clamp((1 - normalizedSpeed) * 4, 0, 1)
+      : clamp(1 - Math.pow(Math.abs(this.speedForward) / reverseSpeed, 2), 0, 1);
+    const impulse = localForward.scale(drive * this.spec.acceleration * this.body.mass * speedLimiter * dt);
+    this.body.applyImpulse(impulse);
 
     const grip = this.lastInput.handbrake ? 0.18 : this.spec.grip;
     const lateralCorrection = lateralSpeed * clamp(grip * dt * 8.5, 0, 0.92);
     velocity.x -= localRight.x * lateralCorrection;
     velocity.z -= localRight.z * lateralCorrection;
 
-    const steerAuthority = clamp(Math.abs(this.speedForward) / 5, 0, 1) * (1 - normalizedSpeed * 0.45);
+    const steerAuthority = clamp(Math.abs(this.speedForward) / 5, 0, 1) * (1 - normalizedSpeed * 0.68);
     const reverseSign = this.speedForward < -0.8 ? -1 : 1;
     const driftBoost = this.lastInput.handbrake && Math.abs(this.speedForward) > 8 ? 1.32 : 1;
     const targetYaw = this.lastInput.steering * this.spec.handling * steerAuthority * reverseSign * driftBoost;
     this.body.angularVelocity.y = damp(this.body.angularVelocity.y, targetYaw, this.lastInput.handbrake ? 3.5 : 7.5, dt);
 
-    const aeroDrag = 0.00042 * velocity.lengthSquared();
+    const aeroDrag = 0.00002 * velocity.lengthSquared();
     velocity.x -= velocity.x * aeroDrag * dt;
     velocity.z -= velocity.z * aeroDrag * dt;
-    if (Math.abs(this.speedForward) > this.spec.topSpeed * 1.05) {
-      velocity.x *= 0.992;
-      velocity.z *= 0.992;
-    }
 
     if (this.body.position.y < -2 || Math.abs(this.body.position.x) > 760 || Math.abs(this.body.position.z) > 760) this.recover();
   }
@@ -106,13 +117,17 @@ export class PlayerVehicle {
     this.group.quaternion.set(this.body.quaternion.x, this.body.quaternion.y, this.body.quaternion.z, this.body.quaternion.w);
     this.wheelSpin += this.speedForward * dt / 0.38;
     this.steeringVisual = damp(this.steeringVisual, this.lastInput.steering * 0.5, 10, dt);
+    // Wheel order from GLB: fl, fr, rl, rr — front axles are indices 0 and 1.
     this.model.userData.wheels.forEach((wheel, index) => {
       wheel.rotation.x = this.wheelSpin;
-      if (index === 1 || index === 3) wheel.rotation.y = this.steeringVisual;
+      if (index === 0 || index === 1) wheel.rotation.y = this.steeringVisual;
     });
     const brakeIntensity = this.lastInput.brake > 0.05 ? 0xff7a87 : 0xff263f;
     this.model.userData.brakeLights.forEach((light) => {
-      (light.material as THREE.MeshBasicMaterial).color.setHex(brakeIntensity);
+      const material = light.material as THREE.MeshStandardMaterial;
+      material.color.setHex(brakeIntensity);
+      material.emissive.setHex(this.lastInput.brake > 0.05 ? 0xff1f3d : 0x8a0718);
+      material.emissiveIntensity = this.lastInput.brake > 0.05 ? 2.6 : 1.5;
     });
   }
 
@@ -140,16 +155,27 @@ export class PlayerVehicle {
   }
 
   recover(): void {
-    const x = Math.round(this.body.position.x / 120) * 120;
-    const z = Math.round(this.body.position.z / 120) * 120;
+    const x = clamp(Math.round(this.body.position.x / 120) * 120, -600, 600);
+    const z = clamp(Math.round(this.body.position.z / 120) * 120, -600, 600);
     const rotation = new CANNON.Vec3();
     this.body.quaternion.toEuler(rotation);
-    this.reset(x, z, rotation.y);
+    let yaw = rotation.y;
+    const forwardX = Math.sin(yaw);
+    const forwardZ = Math.cos(yaw);
+    const facingOutward = (x >= 600 && forwardX > 0) ||
+      (x <= -600 && forwardX < 0) ||
+      (z >= 600 && forwardZ > 0) ||
+      (z <= -600 && forwardZ < 0);
+    if (facingOutward) yaw += Math.PI;
+    this.reset(x, z, yaw);
   }
 
-  private applyLongitudinalBrake(strength: number): void {
-    const scale = 1 - clamp(strength * 0.075, 0, 0.2);
-    this.body.velocity.x *= scale;
-    this.body.velocity.z *= scale;
+  private applyLongitudinalBrake(strength: number, dt: number): void {
+    const forward = this.body.quaternion.vmult(new CANNON.Vec3(0, 0, 1));
+    const forwardSpeed = this.body.velocity.dot(forward);
+    const deltaSpeed = Math.min(Math.abs(forwardSpeed), strength * 14.5 * dt);
+    const direction = Math.sign(forwardSpeed);
+    this.body.velocity.x -= forward.x * deltaSpeed * direction;
+    this.body.velocity.z -= forward.z * deltaSpeed * direction;
   }
 }

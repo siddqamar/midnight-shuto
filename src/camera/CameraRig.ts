@@ -1,7 +1,7 @@
 import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
 import type { CameraMode, VehicleTelemetry } from '../core/types';
-import { damp } from '../utils/math';
+import { damp, speedEffectIntensity } from '../utils/math';
 
 const MODES: CameraMode[] = ['CHASE', 'FAR', 'HOOD', 'DASH', 'COCKPIT', 'ORBIT', 'FREE'];
 
@@ -21,6 +21,9 @@ export class CameraRig {
   private orbitAngle = 0;
   private freeYaw = 0;
   private freePitch = -0.12;
+  private shakeTime = 0;
+  private speedEffectLevel = 0;
+  private reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   private rayResult = new CANNON.RaycastResult();
 
@@ -38,6 +41,10 @@ export class CameraRig {
     return MODES[this.modeIndex];
   }
 
+  get feedbackIntensity(): number {
+    return this.speedEffectLevel;
+  }
+
   cycle(): CameraMode {
     this.modeIndex = (this.modeIndex + 1) % MODES.length;
     if (this.mode === 'FREE') {
@@ -49,13 +56,14 @@ export class CameraRig {
 
   update(dt: number, telemetry: VehicleTelemetry): void {
     const mode = this.mode;
+    this.speedEffectLevel = speedEffectIntensity(telemetry.speedKph);
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.target.quaternion);
     const up = new THREE.Vector3(0, 1, 0);
 
     if (mode === 'ORBIT') {
       this.orbitAngle += dt * 0.22;
-      this.targetPosition.copy(this.target.position).add(new THREE.Vector3(Math.sin(this.orbitAngle) * 10, 4.2, Math.cos(this.orbitAngle) * 10));
-      this.lookTarget.copy(this.target.position).add(new THREE.Vector3(0, 1, 0));
+      this.targetPosition.copy(this.target.position).add(new THREE.Vector3(Math.sin(this.orbitAngle) * 7.2, 2.7, Math.cos(this.orbitAngle) * 7.2));
+      this.lookTarget.copy(this.target.position).add(new THREE.Vector3(0, 0.82, 0));
     } else if (mode === 'FREE') {
       this.targetPosition.copy(this.target.position).add(new THREE.Vector3(0, 7, 0));
       const direction = new THREE.Vector3(
@@ -74,11 +82,20 @@ export class CameraRig {
 
     const positionLambda = mode === 'HOOD' || mode === 'DASH' || mode === 'COCKPIT' ? 24 : 7.5;
     this.camera.position.lerp(this.targetPosition, 1 - Math.exp(-positionLambda * dt));
+    if (mode !== 'ORBIT' && mode !== 'FREE' && !this.reducedMotion && this.speedEffectLevel > 0) {
+      this.shakeTime += dt * (11 + this.speedEffectLevel * 9);
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.target.quaternion);
+      const amplitude = this.speedEffectLevel * (mode === 'CHASE' || mode === 'FAR' ? 0.045 : 0.012);
+      this.camera.position.addScaledVector(right, Math.sin(this.shakeTime * 1.7) * amplitude);
+      this.camera.position.addScaledVector(up, Math.cos(this.shakeTime * 2.3) * amplitude * 0.55);
+    }
     const currentDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
     const desiredDirection = this.lookTarget.clone().sub(this.camera.position).normalize();
     currentDirection.lerp(desiredDirection, 1 - Math.exp(-10 * dt));
     this.camera.lookAt(this.camera.position.clone().add(currentDirection));
-    const targetFov = mode === 'CHASE' || mode === 'FAR' ? 62 + Math.min(10, telemetry.speedKph * 0.045) : 67;
+    const targetFov = mode === 'CHASE' || mode === 'FAR'
+      ? 62 + Math.min(2, telemetry.speedKph * 0.025) + this.speedEffectLevel * 12
+      : 67 + this.speedEffectLevel * 4;
     this.camera.fov = damp(this.camera.fov, targetFov, 4, dt);
     this.camera.updateProjectionMatrix();
   }

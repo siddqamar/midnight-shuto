@@ -1,5 +1,11 @@
-const CACHE_NAME = 'midnight-shuto-v1';
+const CACHE_NAME = 'midnight-shuto-v2';
 const ROOT_URL = new URL('./', self.location.href);
+const EXTRA_ASSETS = [
+  './models/kaze.glb',
+  './models/michi.glb',
+  './models/raiden.glb',
+  './models/shogun.glb'
+];
 
 async function precacheBuild() {
   const cache = await caches.open(CACHE_NAME);
@@ -10,6 +16,9 @@ async function precacheBuild() {
   const assetUrls = [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
     .map((match) => new URL(match[1], ROOT_URL))
     .filter((url) => url.origin === ROOT_URL.origin && url.pathname.startsWith(ROOT_URL.pathname));
+  for (const extra of EXTRA_ASSETS) {
+    assetUrls.push(new URL(extra, ROOT_URL));
+  }
   await Promise.allSettled(assetUrls.map((url) => cache.add(url)));
 }
 

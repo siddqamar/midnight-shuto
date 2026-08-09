@@ -1,6 +1,11 @@
-# Midnight Shuto
+<h1 align="center">Midnight Shuto</h1>
 
-`Vibe coded with GPT-5.6 Sol` · `Three.js browser game` · `Arcade driving`
+![GPT-5.6 Sol](https://img.shields.io/badge/GPT--5.6_SOL-101010?style=for-the-badge&logo=openai&logoColor=white)
+![Vibe coding](https://img.shields.io/badge/VIBE_CODING-7c3aed?style=for-the-badge&logoColor=white)
+![Three.js](https://img.shields.io/badge/THREE.JS-101010?style=for-the-badge&logo=threedotjs&logoColor=white)
+![Browser game](https://img.shields.io/badge/BROWSER_GAME-0284c7?style=for-the-badge&logo=googlechrome&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TYPESCRIPT-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
+![Vite](https://img.shields.io/badge/VITE-646cff?style=for-the-badge&logo=vite&logoColor=white)
 
 ![Midnight Shuto gameplay](demo.gif)
 

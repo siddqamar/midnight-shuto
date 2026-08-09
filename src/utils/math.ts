@@ -4,6 +4,11 @@ export const lerp = (from: number, to: number, amount: number): number => from +
 
 export const damp = (from: number, to: number, lambda: number, dt: number): number => lerp(from, to, 1 - Math.exp(-lambda * dt));
 
+export const speedEffectIntensity = (speedKph: number): number => {
+  const progress = clamp((speedKph - 80) / 100, 0, 1);
+  return progress * progress * (3 - 2 * progress);
+};
+
 export const formatTime = (seconds: number): string => {
   const safe = Math.max(0, seconds);
   const minutes = Math.floor(safe / 60);

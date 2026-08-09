@@ -1,6 +1,7 @@
 import { MISSIONS, VEHICLES, WORLD_SIZE } from '../core/config';
-import type { CameraMode, Difficulty, SaveData, VehicleTelemetry, Weather } from '../core/types';
+import type { CameraMode, Difficulty, SaveData, VehicleId, VehicleTelemetry, Weather } from '../core/types';
 import type { MissionHUDState } from '../missions/MissionSystem';
+import { speedEffectIntensity } from '../utils/math';
 
 export interface UIHandlers {
   continue: () => void;
@@ -17,6 +18,54 @@ export interface UIHandlers {
   setAudio: (volume: number) => void;
 }
 
+const vehiclePreviewProfiles: Record<VehicleId, {
+  body: string;
+  glass: string;
+  wheels: [number, number];
+  detail: string;
+}> = {
+  // Side silhouettes aligned with Midtown-style class identity
+  kaze: {
+    body: 'M10 50 L12 40 L28 34 L48 30 L62 18 L104 17 L126 30 L148 36 L154 50 Z',
+    glass: 'M56 30 L68 20 L100 20 L114 31 Z',
+    wheels: [40, 126],
+    detail: 'M14 40 L32 35 M128 32 L148 38 M72 20 L72 30 M90 19 L90 30 M148 40 H154'
+  },
+  michi: {
+    body: 'M9 50 L11 34 L30 30 L40 16 L108 15 L128 28 L148 36 L154 50 Z',
+    glass: 'M36 30 L48 18 L100 17 L118 30 Z',
+    wheels: [38, 126],
+    detail: 'M14 34 L28 30 M130 30 L148 38 M62 17 L62 29 M88 17 L88 29 M48 15 L62 12 L98 12 L108 16'
+  },
+  raiden: {
+    body: 'M6 50 L10 40 L34 34 L54 30 L68 20 L110 18 L130 30 L152 40 L156 50 Z',
+    glass: 'M60 30 L72 21 L106 20 L120 31 Z',
+    wheels: [40, 130],
+    detail: 'M12 41 L36 35 M128 32 L150 41 M84 21 L84 31 M102 20 L102 31 M72 42 A10 8 0 0 0 92 42'
+  },
+  shogun: {
+    body: 'M6 50 L12 40 L50 30 L96 18 L130 22 L152 40 L156 50 Z',
+    glass: 'M64 30 L100 20 L126 24 L136 36 Z',
+    wheels: [42, 128],
+    detail: 'M14 41 L52 32 M102 22 L128 25 M132 28 L150 40 M70 28 L98 20 L120 24'
+  }
+};
+
+function vehiclePreview(vehicleId: VehicleId, color: string): string {
+  const preview = vehiclePreviewProfiles[vehicleId];
+  const wheels = preview.wheels.map((x) => `<g transform="translate(${x} 48)"><circle class="preview-tire" r="12"/><circle class="preview-rim" r="6"/><path class="preview-spokes" d="M-5 0H5M0-5V5M-3.5-3.5L3.5 3.5M3.5-3.5L-3.5 3.5"/></g>`).join('');
+  return `<svg class="car-preview" style="--car-color:${color}" viewBox="0 0 160 68" aria-hidden="true">
+    <ellipse class="preview-shadow" cx="81" cy="59" rx="70" ry="6"/>
+    <path class="preview-body" d="${preview.body}"/>
+    <path class="preview-highlight" d="${preview.body}"/>
+    <path class="preview-glass" d="${preview.glass}"/>
+    <path class="preview-detail" d="${preview.detail}"/>
+    <rect class="preview-headlight" x="145" y="38" width="9" height="5" rx="1"/>
+    <rect class="preview-taillight" x="7" y="38" width="8" height="5" rx="1"/>
+    ${wheels}
+  </svg>`;
+}
+
 export class HUD {
   private root: HTMLElement;
   private mapCanvas: HTMLCanvasElement;
@@ -29,6 +78,7 @@ export class HUD {
   private countdownElement: HTMLElement;
   private debugElement: HTMLElement;
   private cameraElement: HTMLElement;
+  private speedEffectsElement: HTMLElement;
   private toastElement: HTMLElement;
   private lastSpeed = -1;
   private toastTimeout = 0;
@@ -52,6 +102,7 @@ export class HUD {
     this.countdownElement = this.require('#countdown');
     this.debugElement = this.require('#debug-panel');
     this.cameraElement = this.require('#camera-label');
+    this.speedEffectsElement = this.require('#speed-effects');
     this.toastElement = this.require('#toast');
     this.renderGarage();
     this.renderMissionList();
@@ -120,6 +171,7 @@ export class HUD {
     }
     this.rpmElement.style.setProperty('--rpm', `${Math.min(1, telemetry.rpm / 8500) * 100}%`);
     this.gearElement.textContent = telemetry.gear;
+    this.speedEffectsElement.style.setProperty('--speed-intensity', speedEffectIntensity(telemetry.speedKph).toFixed(3));
     this.cameraElement.textContent = camera;
     this.missionPanel.classList.toggle('active', mission.active);
     this.require('#mission-title').textContent = mission.title;
@@ -183,9 +235,9 @@ export class HUD {
     list.innerHTML = VEHICLES.map((vehicle) => {
       const unlocked = this.save.unlockedVehicles.includes(vehicle.id);
       const selected = this.save.selectedVehicle === vehicle.id;
-      const stats = [vehicle.topSpeed / 72, vehicle.acceleration / 13200, vehicle.handling / 2.85, vehicle.braking];
+      const stats = [vehicle.topSpeedKph / 212, vehicle.acceleration / 10, vehicle.handling / 2.85, vehicle.braking];
       return `<button class="car-card ${selected ? 'selected' : ''} ${unlocked ? '' : 'locked'}" data-action="select-vehicle" data-id="${vehicle.id}" ${unlocked ? '' : 'disabled'}>
-        <span class="car-swatch" style="--car-color:${this.save.vehicleColors[vehicle.id] ?? vehicle.color}"></span>
+        ${vehiclePreview(vehicle.id, this.save.vehicleColors[vehicle.id] ?? vehicle.color)}
         <span class="car-info"><small>${vehicle.className}</small><strong>${vehicle.name}</strong><em>${unlocked ? vehicle.description : `Win ${vehicle.unlockWins} missions to unlock`}</em></span>
         <span class="car-stats">${stats.map((value) => `<i style="--value:${Math.round(value * 100)}%"></i>`).join('')}</span>
       </button>`;
@@ -276,6 +328,7 @@ export class HUD {
     return `<main id="game-shell">
       <div id="viewport"></div>
       <div class="film-grain"></div>
+      <div id="speed-effects" aria-hidden="true"></div>
       <section id="main-menu" class="screen-layer">
         <header class="menu-header"><span class="micro">湾岸 // 01:42</span><span class="status-dot">SHUTO NETWORK ONLINE</span></header>
         <div class="brand-block">
