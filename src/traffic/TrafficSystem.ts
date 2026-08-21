@@ -1,5 +1,7 @@
 import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
+import type { TrafficAudioVehicle } from '../audio/AudioSystem';
+import type { TrafficVehicleKind } from '../audio/vehicleSoundProfiles';
 import { ROAD_SPACING } from '../core/config';
 import { damp, seededRandom } from '../utils/math';
 
@@ -13,6 +15,7 @@ interface TrafficCar {
   wheels: THREE.Group[];
   brakeLights: THREE.MeshStandardMaterial[];
   wheelSpin: number;
+  audio: TrafficAudioVehicle;
 }
 
 const colors = ['#d7dde2', '#1b1f26', '#d64141', '#d8c856', '#3b76bd', '#4d555a', '#f0eee2'];
@@ -36,6 +39,8 @@ const trafficStyles: TrafficStyle[] = [
   { width: 1.84, length: 4.46, roofHeight: 0.48, wheelRadius: 0.31, cabinLength: 2.02 },
   { width: 1.9, length: 4.72, roofHeight: 0.43, wheelRadius: 0.33, cabinLength: 1.88 }
 ];
+
+const trafficSoundKinds: TrafficVehicleKind[] = ['compact', 'sedan', 'touring'];
 
 function addTrafficWheel(root: THREE.Group, x: number, z: number, radius: number, rimMaterial: THREE.MeshStandardMaterial): THREE.Group {
   const wheel = new THREE.Group();
@@ -133,6 +138,7 @@ function rectangleRoute(minX: number, maxX: number, minZ: number, maxZ: number, 
 
 export class TrafficSystem {
   private cars: TrafficCar[] = [];
+  private audioSources: TrafficAudioVehicle[] = [];
   private signals: Array<{ bulbs: THREE.Mesh[]; phase: number }> = [];
 
   constructor(scene: THREE.Scene, physics: CANNON.World, amount: number) {
@@ -161,16 +167,28 @@ export class TrafficSystem {
         position: new CANNON.Vec3(model.position.x, model.position.y, model.position.z)
       });
       physics.addBody(body);
+      const speed = 7 + random() * 4;
+      const audio: TrafficAudioVehicle = {
+        id: index,
+        kind: trafficSoundKinds[index % trafficSoundKinds.length],
+        position: model.position,
+        velocity: new THREE.Vector3(),
+        speedMps: speed,
+        acceleration: 0,
+        variation: ((((index * 37) % 101) / 100) - 0.5) * 0.1
+      };
+      this.audioSources.push(audio);
       this.cars.push({
         model,
         body,
         route,
         segment,
-        speed: 7 + random() * 4,
+        speed,
         cruise: 10 + random() * 7,
         wheels: created.wheels,
         brakeLights: created.brakeLights,
-        wheelSpin: random() * Math.PI * 2
+        wheelSpin: random() * Math.PI * 2,
+        audio
       });
     }
     this.createSignals(scene);
@@ -196,7 +214,10 @@ export class TrafficSystem {
       const playerDistance = current.distanceTo(playerPosition);
       const yielding = playerDistance < 10 && this.isAhead(current, playerPosition, direction);
       const desired = (redLight && atIntersection) || yielding ? 0 : car.cruise;
+      const previousSpeed = car.speed;
       car.speed = damp(car.speed, desired, desired === 0 ? 3.2 : 0.8, dt);
+      car.audio.speedMps = car.speed;
+      car.audio.acceleration = (car.speed - previousSpeed) / Math.max(dt, 0.001);
       const braking = desired < car.speed - 0.65;
       for (const light of car.brakeLights) {
         light.emissive.setHex(braking ? 0xff1735 : 0x8d0618);
@@ -218,11 +239,18 @@ export class TrafficSystem {
       car.body.quaternion.setFromEuler(0, car.model.rotation.y, 0);
       const velocityDirection = car.route[(car.segment + 1) % car.route.length].clone().sub(current).normalize();
       car.body.velocity.set(velocityDirection.x * car.speed, 0, velocityDirection.z * car.speed);
+      car.audio.velocity.x = velocityDirection.x * car.speed;
+      car.audio.velocity.y = 0;
+      car.audio.velocity.z = velocityDirection.z * car.speed;
     }
   }
 
   get count(): number {
     return this.cars.length;
+  }
+
+  get audioVehicles(): readonly TrafficAudioVehicle[] {
+    return this.audioSources;
   }
 
   private isAhead(origin: THREE.Vector3, target: THREE.Vector3, direction: THREE.Vector3): boolean {

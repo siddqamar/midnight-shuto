@@ -44,7 +44,8 @@ try {
 
   const results = [];
   for (const vehicle of vehicles) {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+    const page = await context.newPage();
     await page.addInitScript(({ selectedVehicle, unlockedVehicles }) => {
       localStorage.setItem('midnight-shuto-save-v1', JSON.stringify({
         selectedVehicle,
@@ -57,8 +58,8 @@ try {
     await page.locator('#hud').waitFor({ state: 'visible' });
 
     const baseFeedback = await page.evaluate(() => window.__shutoDebug?.().feedback);
+    const accelerationStartedAt = await page.evaluate(() => window.__shutoDebug?.().elapsed ?? 0);
     await page.keyboard.down('w');
-    const startedAt = performance.now();
     let zeroToEighty = null;
     let maximumSpeed = 0;
     let lowSpeedFeedback = 0;
@@ -71,6 +72,7 @@ try {
       await page.waitForTimeout(500);
       const snapshot = await page.evaluate(() => ({
         speed: Number(document.querySelector('#speed-value')?.textContent ?? 0),
+        elapsed: window.__shutoDebug?.().elapsed ?? 0,
         feedback: window.__shutoDebug?.().feedback,
         visualIntensity: Number(getComputedStyle(document.querySelector('#speed-effects')).getPropertyValue('--speed-intensity'))
       }));
@@ -86,7 +88,7 @@ try {
         capturedHighSpeed = true;
       }
       if (speed < 75) lowSpeedFeedback = Math.max(lowSpeedFeedback, feedback);
-      if (zeroToEighty === null && speed >= 80) zeroToEighty = (performance.now() - startedAt) / 1000;
+      if (zeroToEighty === null && speed >= 80) zeroToEighty = snapshot.elapsed - accelerationStartedAt;
     }
     await page.keyboard.up('w');
 
@@ -109,7 +111,7 @@ try {
     await page.keyboard.up('w');
     const handlingSnapshot = await page.evaluate(() => window.__shutoDebug?.());
 
-    const brakingStartedAt = performance.now();
+    const brakingStartedAt = Number(handlingSnapshot?.elapsed ?? 0);
     let brakingSpeed = Number(handlingSnapshot?.telemetry.speedKph ?? 0);
     await page.keyboard.down('s');
     for (let sample = 0; sample < 60 && brakingSpeed > 10; sample += 1) {
@@ -117,7 +119,8 @@ try {
       brakingSpeed = Number(await page.locator('#speed-value').textContent());
     }
     await page.keyboard.up('s');
-    const brakingSeconds = (performance.now() - brakingStartedAt) / 1000;
+    const brakingEndedAt = await page.evaluate(() => window.__shutoDebug?.().elapsed ?? 0);
+    const brakingSeconds = brakingEndedAt - brakingStartedAt;
 
     await page.evaluate(() => window.__shutoReset?.());
     await page.keyboard.down('w');
@@ -143,6 +146,7 @@ try {
     await page.waitForTimeout(2200);
     const recoverySnapshot = await page.evaluate(() => window.__shutoDebug?.());
     await page.keyboard.up('w');
+    const soundscape = await page.evaluate(() => window.__shutoDebug?.().feedback.soundscape);
 
     results.push({
       vehicle,
@@ -160,9 +164,10 @@ try {
       brakingSeconds,
       brakingSpeed,
       drifted,
-      recoverySnapshot
+      recoverySnapshot,
+      soundscape
     });
-    await page.close();
+    await context.close();
   }
 
   console.table(results.map((result) => ({
@@ -182,6 +187,9 @@ try {
     if (result.maximumFeedback < 0.15) failures.push(`${result.vehicle} did not produce noticeable high-speed feedback`);
     if (result.maximumCameraFov < (result.baseFeedback?.cameraFov ?? 0) + 4) failures.push(`${result.vehicle} did not expand the camera FOV enough`);
     if (result.maximumAudioFeedback < 0.15) failures.push(`${result.vehicle} did not increase high-speed audio feedback`);
+    if (result.soundscape?.playerProfile !== result.vehicle) failures.push(`${result.vehicle} did not activate its own sound profile`);
+    if ((result.soundscape?.activeTrafficVoices ?? 0) < 1) failures.push(`${result.vehicle} did not maintain spatial traffic audio`);
+    if ((result.soundscape?.activeTrafficVoices ?? 99) > (result.soundscape?.trafficVoiceBudget ?? 0)) failures.push(`${result.vehicle} exceeded the traffic voice budget`);
     if (result.feedbackMismatch > 0.02) failures.push(`${result.vehicle} visual and camera feedback were not synchronized`);
     const recoveryPosition = result.roadRecoverySnapshot?.body.position;
     const recoveryRotation = result.roadRecoverySnapshot?.body.quaternion;
@@ -210,6 +218,8 @@ try {
       failures.push(`${current.vehicle} was not clearly faster than ${previous.vehicle}`);
     }
   }
+  const playerFrequencies = results.map((result) => Math.round(result.soundscape?.playerFrequency ?? 0));
+  if (new Set(playerFrequencies).size < 3) failures.push(`Vehicle sound profiles converged on repetitive engine pitches: ${playerFrequencies.join(', ')}`);
   if (failures.length > 0) throw new Error(`Vehicle performance acceptance failed:\n${failures.join('\n')}`);
 } finally {
   await browser?.close();

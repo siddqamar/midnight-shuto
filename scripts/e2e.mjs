@@ -43,6 +43,17 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   await page.addInitScript(() => {
     localStorage.setItem('midnight-shuto-save-v1', JSON.stringify({ settings: { quality: 'performance' } }));
+    window.__audioProbe = { oscillators: 0, panners: 0 };
+    const createOscillator = AudioContext.prototype.createOscillator;
+    const createPanner = AudioContext.prototype.createPanner;
+    AudioContext.prototype.createOscillator = function createProbedOscillator() {
+      window.__audioProbe.oscillators += 1;
+      return createOscillator.call(this);
+    };
+    AudioContext.prototype.createPanner = function createProbedPanner() {
+      window.__audioProbe.panners += 1;
+      return createPanner.call(this);
+    };
   });
   const errors = [];
   page.on('pageerror', (error) => errors.push(`page: ${error.message}`));
@@ -75,9 +86,11 @@ try {
   await page.waitForTimeout(250);
   const speed = Number(await page.locator('#speed-value').innerText());
   const inputCode = await page.evaluate(() => window.__lastTestKey);
+  const audioProbe = await page.evaluate(() => window.__audioProbe);
   const drivingDebug = await page.locator('#debug-panel').innerText();
   await page.screenshot({ path: join(artifactsPath, 'drive.png') });
   if (!Number.isFinite(speed) || speed < 5) throw new Error(`Vehicle did not accelerate. HUD speed: ${speed}. Last input: ${inputCode}. Debug: ${drivingDebug.replaceAll('\n', ' | ')}. Physics: ${JSON.stringify(physicsSnapshot)}`);
+  if (audioProbe.panners === 0 || audioProbe.oscillators <= 2) throw new Error(`Traffic audio was not spatialized into distinct voices: ${JSON.stringify(audioProbe)}`);
 
   await page.keyboard.press('c');
   await page.waitForTimeout(250);
@@ -92,7 +105,7 @@ try {
   await page.locator('[data-action="quit-menu"]').click({ force: true });
   await page.locator('#main-menu').waitFor({ state: 'visible' });
   await page.locator('[data-panel="missions"][data-action="open-panel"]').click({ force: true });
-  await page.locator('.mission-card').first().click({ force: true });
+  await page.locator('.mission-card').first().click({ force: true, noWaitAfter: true });
   await page.waitForTimeout(300);
   const missionTitle = (await page.locator('#mission-title').innerText()).trim();
   if (missionTitle !== 'Bayline Rush') throw new Error(`Mission did not start. Found: ${missionTitle}`);

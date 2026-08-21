@@ -54,6 +54,7 @@ export class Game {
     this.city = new City(this.scene, this.physics, this.save.data.settings.quality);
     this.city.setWeather(this.save.data.settings.weather, this.scene);
     const spec = this.selectedSpec;
+    this.audio.setPlayerProfile(spec.id);
     this.vehicle = new PlayerVehicle(this.physics, this.scene, spec, this.save.data.vehicleColors[spec.id] ?? spec.color);
     this.vehicle.reset(0, 0, 0);
     this.vehicle.setImpactHandler((strength) => this.audio.collision(strength));
@@ -61,6 +62,7 @@ export class Game {
     this.camera = new CameraRig(this.vehicle.group, this.physics);
     const trafficAmount = this.save.data.settings.quality === 'performance' ? 15 : this.save.data.settings.quality === 'high' ? 30 : 23;
     this.traffic = new TrafficSystem(this.scene, this.physics, trafficAmount);
+    this.audio.setTrafficBudget(this.save.data.settings.quality === 'performance' ? 4 : this.save.data.settings.quality === 'high' ? 8 : 6);
     this.missions = new MissionSystem(this.scene, this.save.data.settings.difficulty);
     this.missions.onComplete((mission, record, won) => {
       if (won) {
@@ -78,7 +80,10 @@ export class Game {
     this.bindInput();
     this.exposeDebugSnapshot();
     window.addEventListener('resize', this.resize);
-    window.addEventListener('beforeunload', () => this.save.save());
+    window.addEventListener('beforeunload', () => {
+      this.save.save();
+      this.audio.dispose();
+    });
     this.renderer.setAnimationLoop(this.frame);
   }
 
@@ -117,6 +122,7 @@ export class Game {
       },
       quitToMenu: () => {
         this.state = 'menu';
+        this.audio.setDriving(false);
         this.missions.cancel();
         this.save.save();
         this.hud.showMainMenu();
@@ -194,6 +200,7 @@ export class Game {
 
   private togglePause(paused: boolean): void {
     this.state = paused ? 'paused' : 'playing';
+    this.audio.setDriving(!paused);
     this.hud.showPause(paused);
     if (!paused) this.previousTime = performance.now();
   }
@@ -201,6 +208,7 @@ export class Game {
   private applySelectedVehicle(): void {
     const spec = this.selectedSpec;
     this.vehicle.setSpec(spec, this.save.data.vehicleColors[spec.id] ?? spec.color);
+    this.audio.setPlayerProfile(spec.id);
   }
 
   private setWeather(weather: Weather): void {
@@ -230,6 +238,7 @@ export class Game {
       const telemetry = this.vehicle.getTelemetry();
       return {
         state: this.state,
+        elapsed: this.elapsed,
         throttle: this.lastInputThrottle,
         telemetry: {
           speedKph: telemetry.speedKph,
@@ -239,7 +248,8 @@ export class Game {
         feedback: {
           cameraFov: this.camera.camera.fov,
           cameraIntensity: this.camera.feedbackIntensity,
-          audioIntensity: this.audio.feedbackIntensity
+          audioIntensity: this.audio.feedbackIntensity,
+          soundscape: this.audio.getDebugSnapshot()
         },
         body: {
           type: this.vehicle.body.type,
@@ -290,7 +300,14 @@ export class Game {
     this.city.update(this.camera.camera.position, this.elapsed);
     if (this.state === 'playing') {
       this.hud.update(telemetry, missionState, this.camera.mode);
-      this.audio.update(dt, telemetry, this.lastInputThrottle, this.save.data.settings.weather);
+      this.audio.update(
+        dt,
+        telemetry,
+        this.lastInputThrottle,
+        this.save.data.settings.weather,
+        this.camera.camera,
+        this.traffic.audioVehicles
+      );
       this.save.tick(dt, telemetry.speedKph);
     }
 
