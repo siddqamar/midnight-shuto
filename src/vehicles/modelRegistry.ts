@@ -138,26 +138,24 @@ function collectWheels(root: THREE.Object3D): THREE.Group[] {
   for (const name of names) {
     const node = root.getObjectByName(name);
     if (!node) throw new Error(`Vehicle model is missing wheel pivot "${name}".`);
-    // Ensure Group for rotation pivots
-    if (node instanceof THREE.Group) {
-      wheels.push(node);
-    } else {
-      const pivot = new THREE.Group();
-      pivot.name = name;
-      pivot.position.copy(node.position);
-      pivot.quaternion.copy(node.quaternion);
-      pivot.scale.copy(node.scale);
-      const parent = node.parent;
-      if (parent) {
-        parent.add(pivot);
-        parent.remove(node);
-      }
-      node.position.set(0, 0, 0);
-      node.rotation.set(0, 0, 0);
-      node.scale.set(1, 1, 1);
-      pivot.add(node);
-      wheels.push(pivot);
-    }
+    const parent = node.parent;
+    if (!parent) throw new Error(`Vehicle wheel "${name}" has no parent.`);
+
+    // Some exports place the wheel mesh at the axle but put the named node's
+    // origin back near the vehicle center. Rotating that node makes the wheel
+    // orbit instead of spinning in place. Build a pivot at the rendered wheel
+    // bounds center and attach the imported node without changing its pose.
+    root.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(node);
+    const pivotPosition = bounds.getCenter(new THREE.Vector3());
+    parent.worldToLocal(pivotPosition);
+
+    const pivot = new THREE.Group();
+    pivot.name = `${name}_runtime_pivot`;
+    parent.add(pivot);
+    pivot.position.copy(pivotPosition);
+    pivot.attach(node);
+    wheels.push(pivot);
   }
   return wheels;
 }
