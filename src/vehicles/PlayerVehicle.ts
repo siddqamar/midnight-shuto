@@ -1,6 +1,6 @@
 import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
-import type { InputState, VehicleSpec, VehicleTelemetry } from '../core/types';
+import type { CameraMode, InputState, VehicleSpec, VehicleTelemetry } from '../core/types';
 import { clamp, damp } from '../utils/math';
 import { createCarModel, type CarModel } from './CarModel';
 
@@ -129,6 +129,19 @@ export class PlayerVehicle {
       material.emissive.setHex(this.lastInput.brake > 0.05 ? 0xff1f3d : 0x8a0718);
       material.emissiveIntensity = this.lastInput.brake > 0.05 ? 2.6 : 1.5;
     });
+    const wheel = this.model.userData.steeringWheel;
+    if (wheel) {
+      wheel.quaternion.copy(this.model.userData.steeringBase);
+      wheel.rotateOnAxis(new THREE.Vector3(0, 0, 1), this.steeringVisual * 2.6);
+    }
+    this.model.userData.cluster?.update(this.getTelemetry());
+  }
+
+  setCameraMode(mode: CameraMode): void {
+    const interior = mode === 'DASH' || mode === 'COCKPIT';
+    for (const glass of this.model.userData.cabinGlass) glass.visible = !interior;
+    const light = this.model.userData.interiorLight;
+    if (light) light.intensity = interior ? 1.8 : 0.7;
   }
 
   getTelemetry(): VehicleTelemetry {
@@ -142,7 +155,10 @@ export class PlayerVehicle {
       gear,
       slip: this.slip,
       drifting: this.slip > 0.22 && speedKph > 24,
-      position: this.group.position
+      position: this.group.position,
+      steering: this.lastInput.steering,
+      throttle: this.lastInput.throttle,
+      brake: this.lastInput.brake
     };
   }
 

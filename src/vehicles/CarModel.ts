@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { VehicleId } from '../core/types';
 import { instantiateVehicleModel } from './modelRegistry';
+import type { InstrumentCluster } from './InstrumentCluster';
 
 export interface CarModel extends THREE.Group {
   userData: {
@@ -10,6 +11,11 @@ export interface CarModel extends THREE.Group {
     bodyMaterials: THREE.MeshStandardMaterial[];
     collisionHalfExtents: THREE.Vector3;
     vehicleId: VehicleId;
+    steeringWheel?: THREE.Object3D;
+    steeringBase: THREE.Quaternion;
+    cabinGlass: THREE.Object3D[];
+    cluster?: InstrumentCluster;
+    interiorLight?: THREE.PointLight;
   };
 }
 
@@ -26,7 +32,12 @@ export function createCarModel(vehicleId: VehicleId, color: string, _accent = '#
     bodyMaterial: instance.bodyMaterial,
     bodyMaterials: instance.bodyMaterials,
     collisionHalfExtents: instance.collisionHalfExtents,
-    vehicleId
+    vehicleId,
+    steeringWheel: instance.steeringWheel,
+    steeringBase: instance.steeringBase,
+    cabinGlass: instance.cabinGlass,
+    cluster: instance.cluster,
+    interiorLight: instance.interiorLight
   };
   return car;
 }

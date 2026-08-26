@@ -71,6 +71,9 @@ export interface VehicleTelemetry {
   slip: number;
   drifting: boolean;
   position: Vector3;
+  steering: number;
+  throttle: number;
+  brake: number;
 }
 
 export interface InputState {

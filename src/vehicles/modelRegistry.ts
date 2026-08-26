@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { VehicleId } from '../core/types';
+import { InstrumentCluster } from './InstrumentCluster';
 
 const VEHICLE_IDS: VehicleId[] = ['kaze', 'michi', 'raiden', 'shogun'];
 
@@ -54,12 +55,27 @@ function upgradeMaterials(root: THREE.Object3D): void {
 
       if (material.name === 'Glass') {
         material.color.setRGB(0.035, 0.075, 0.12);
-        material.metalness = 0.42;
-        material.roughness = 0.1;
+        material.metalness = 0.22;
+        material.roughness = 0.08;
         material.transparent = true;
-        material.opacity = 0.76;
-        material.envMapIntensity = 1.25;
+        material.opacity = 0.58;
+        material.envMapIntensity = 1.35;
         material.depthWrite = false;
+        material.side = THREE.FrontSide;
+      } else if (material.name === 'Windshield') {
+        const glass = new THREE.MeshPhysicalMaterial({
+          color: 0x9eb8c8,
+          metalness: 0.04,
+          roughness: 0.04,
+          transparent: true,
+          opacity: 0.16,
+          transmission: 0.0,
+          envMapIntensity: 1.6,
+          depthWrite: false,
+          side: THREE.DoubleSide
+        });
+        glass.name = 'Windshield';
+        return glass;
       } else if (material.name === 'LightHead') {
         material.color.setHex(0xddeeff);
         material.emissive.setHex(0x8fc9ff);
@@ -207,6 +223,11 @@ export interface InstantiatedCar {
   bodyMaterial: THREE.MeshStandardMaterial;
   bodyMaterials: THREE.MeshStandardMaterial[];
   collisionHalfExtents: THREE.Vector3;
+  steeringWheel?: THREE.Object3D;
+  steeringBase: THREE.Quaternion;
+  cabinGlass: THREE.Object3D[];
+  cluster?: InstrumentCluster;
+  interiorLight?: THREE.PointLight;
 }
 
 export function instantiateVehicleModel(vehicleId: VehicleId, color: string): InstantiatedCar {
@@ -256,12 +277,36 @@ export function instantiateVehicleModel(vehicleId: VehicleId, color: string): In
 
   addHeadlightRig(root, halfExtents[vehicleId]);
 
+  const steeringWheel = root.getObjectByName('steering_wheel');
+  const steeringBase = steeringWheel ? steeringWheel.quaternion.clone() : new THREE.Quaternion();
+  const cabinGlass: THREE.Object3D[] = [];
+  root.traverse((child) => {
+    if (child.name === 'cabin_glass') cabinGlass.push(child);
+  });
+
+  const clusterMesh = root.getObjectByName('cluster_screen');
+  const cluster = clusterMesh instanceof THREE.Mesh ? new InstrumentCluster(clusterMesh, vehicleId) : undefined;
+
+  const lightAnchor = root.getObjectByName('interior_light');
+  let interiorLight: THREE.PointLight | undefined;
+  if (lightAnchor) {
+    interiorLight = new THREE.PointLight(0xffd4b0, 0.55, 2.2, 2);
+    interiorLight.name = 'cabin_fill';
+    interiorLight.castShadow = false;
+    lightAnchor.add(interiorLight);
+  }
+
   return {
     root,
     wheels,
     brakeLights,
     bodyMaterial,
     bodyMaterials,
-    collisionHalfExtents: halfExtents[vehicleId].clone()
+    collisionHalfExtents: halfExtents[vehicleId].clone(),
+    steeringWheel,
+    steeringBase,
+    cabinGlass,
+    cluster,
+    interiorLight
   };
 }

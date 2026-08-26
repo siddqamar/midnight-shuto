@@ -39,9 +39,15 @@ Optional: `OUTPUT_DIR=path/to/dir` overrides the output folder.
 | Name | Role |
 |------|------|
 | `BodyPaint` | Recolorable body material |
-| `Glass` | Cabin glass |
+| `Glass` | Exterior cabin glass |
+| `Windshield` / mesh `glass_windshield` | Interior windshield pane |
 | `LightTail` / meshes `brake_light_*` | Brake lights |
 | `wheel_fl`, `wheel_fr`, `wheel_rl`, `wheel_rr` | Wheel pivots (empties) |
+| `steering_wheel` | Steering pivot (runtime yaw) |
+| `cluster_screen` | Instrument cluster quad (canvas texture) |
+| `cam_hood`, `cam_dash`, `cam_cockpit` | Interior / hood camera sockets |
+| `cam_*_look` | Matching look targets |
+| `interior_light` | Cabin fill light anchor |
 | `LightHead`, `Chrome`, `Rubber`, `Rim`, `Trim` | Detail materials |
 
 Axes: **+Y up**, **+Z forward**, ground at **y = 0**, origin near chassis center.

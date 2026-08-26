@@ -287,6 +287,7 @@ export class Game {
       countdown: 0
     };
     this.camera.update(dt, telemetry);
+    this.vehicle.setCameraMode(this.camera.mode);
     this.city.update(this.camera.camera.position, this.elapsed);
     if (this.state === 'playing') {
       this.hud.update(telemetry, missionState, this.camera.mode);

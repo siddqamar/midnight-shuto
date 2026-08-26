@@ -115,6 +115,17 @@ def parent_keep(child: bpy.types.Object, parent_obj: bpy.types.Object) -> None:
     child.matrix_parent_inverse = parent_obj.matrix_world.inverted()
 
 
+def parent_local(
+    child: bpy.types.Object,
+    parent_obj: bpy.types.Object,
+    location: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    rotation: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> None:
+    child.parent = parent_obj
+    child.location = location
+    child.rotation_euler = rotation
+
+
 def mesh_from_bmesh(name: str, bm: bmesh.types.BMesh, collection: bpy.types.Collection) -> bpy.types.Object:
     mesh = bpy.data.meshes.new(name)
     bm.normal_update()
@@ -181,6 +192,73 @@ def create_sphere(
     bmesh.ops.create_uvsphere(bm, u_segments=segments, v_segments=rings, radius=radius)
     obj = mesh_from_bmesh(name, bm, collection)
     obj.location = location
+    return obj
+
+
+def create_quad(
+    name: str,
+    width: float,
+    height: float,
+    location: tuple[float, float, float],
+    collection: bpy.types.Collection,
+    rotation: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> bpy.types.Object:
+    """Quad in XZ, facing -Y (toward the driver in Blender space)."""
+    bm = bmesh.new()
+    half_w = width * 0.5
+    half_h = height * 0.5
+    v0 = bm.verts.new((-half_w, 0.0, -half_h))
+    v1 = bm.verts.new((half_w, 0.0, -half_h))
+    v2 = bm.verts.new((half_w, 0.0, half_h))
+    v3 = bm.verts.new((-half_w, 0.0, half_h))
+    face = bm.faces.new((v0, v1, v2, v3))
+    uv_layer = bm.loops.layers.uv.new()
+    for loop, uv in zip(face.loops, ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))):
+        loop[uv_layer].uv = uv
+    obj = mesh_from_bmesh(name, bm, collection)
+    obj.location = location
+    obj.rotation_euler = rotation
+    apply_transform(obj)
+    return obj
+
+
+def hypot(a: float, b: float) -> float:
+    return math.sqrt(a * a + b * b)
+
+
+def create_torus(
+    name: str,
+    major_radius: float,
+    minor_radius: float,
+    location: tuple[float, float, float],
+    collection: bpy.types.Collection,
+    rotation: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    major_segments: int = 28,
+    minor_segments: int = 10,
+) -> bpy.types.Object:
+    bm = bmesh.new()
+    rings: list[list[bmesh.types.BMVert]] = []
+    for i in range(major_segments):
+        u = (i / major_segments) * math.tau
+        ring: list[bmesh.types.BMVert] = []
+        for j in range(minor_segments):
+            v = (j / minor_segments) * math.tau
+            x = (major_radius + minor_radius * math.cos(v)) * math.cos(u)
+            y = (major_radius + minor_radius * math.cos(v)) * math.sin(u)
+            z = minor_radius * math.sin(v)
+            ring.append(bm.verts.new((x, y, z)))
+        rings.append(ring)
+    bm.verts.ensure_lookup_table()
+    for i in range(major_segments):
+        nxt = (i + 1) % major_segments
+        for j in range(minor_segments):
+            jn = (j + 1) % minor_segments
+            bm.faces.new((rings[i][j], rings[nxt][j], rings[nxt][jn], rings[i][jn]))
+    obj = mesh_from_bmesh(name, bm, collection)
+    obj.location = location
+    obj.rotation_euler = rotation
+    apply_transform(obj)
+    smooth(obj)
     return obj
 
 
@@ -260,6 +338,7 @@ CARS = {
         "headlights": "rect",
         "exhausts": [0.55],
         "ride": 0.18,
+        "interior": "sport",
     },
     "michi": {
         "class": "turbo_hatch",
@@ -285,6 +364,7 @@ CARS = {
         "headlights": "quad",
         "exhausts": [-0.50],
         "ride": 0.18,
+        "interior": "hatch",
     },
     "raiden": {
         "class": "grand_tourer",
@@ -310,6 +390,7 @@ CARS = {
         "headlights": "round",
         "exhausts": [-0.55, 0.55],
         "ride": 0.18,
+        "interior": "gt",
     },
     "shogun": {
         "class": "supercar",
@@ -335,8 +416,521 @@ CARS = {
         "headlights": "pop",
         "exhausts": [-0.60, 0.60],
         "ride": 0.14,
+        "interior": "super",
     },
 }
+
+
+INTERIOR_THEMES = {
+    "sport": {
+        "leather": (0.045, 0.028, 0.03, 1.0),
+        "leather_alt": (0.09, 0.05, 0.05, 1.0),
+        "dash": (0.03, 0.032, 0.038, 1.0),
+        "carpet": (0.025, 0.02, 0.022, 1.0),
+        "headliner": (0.07, 0.065, 0.06, 1.0),
+        "stitch": (0.62, 0.08, 0.1, 1.0),
+        "accent": (0.55, 0.06, 0.08, 1.0),
+        "wheel": (0.018, 0.018, 0.02, 1.0),
+        "trim": (0.55, 0.56, 0.58, 1.0),
+        "spokes": 3,
+        "flat_bottom": False,
+        "cluster": "analog",
+    },
+    "hatch": {
+        "leather": (0.03, 0.032, 0.04, 1.0),
+        "leather_alt": (0.12, 0.09, 0.04, 1.0),
+        "dash": (0.025, 0.028, 0.032, 1.0),
+        "carpet": (0.04, 0.04, 0.045, 1.0),
+        "headliner": (0.08, 0.082, 0.09, 1.0),
+        "stitch": (0.82, 0.62, 0.12, 1.0),
+        "accent": (0.82, 0.55, 0.08, 1.0),
+        "wheel": (0.02, 0.02, 0.022, 1.0),
+        "trim": (0.72, 0.58, 0.16, 1.0),
+        "spokes": 3,
+        "flat_bottom": True,
+        "cluster": "analog",
+    },
+    "gt": {
+        "leather": (0.12, 0.08, 0.05, 1.0),
+        "leather_alt": (0.06, 0.04, 0.03, 1.0),
+        "dash": (0.04, 0.038, 0.036, 1.0),
+        "carpet": (0.05, 0.03, 0.02, 1.0),
+        "headliner": (0.14, 0.12, 0.1, 1.0),
+        "stitch": (0.42, 0.28, 0.14, 1.0),
+        "accent": (0.42, 0.26, 0.12, 1.0),
+        "wheel": (0.04, 0.03, 0.025, 1.0),
+        "trim": (0.72, 0.58, 0.28, 1.0),
+        "spokes": 4,
+        "flat_bottom": False,
+        "cluster": "analog",
+    },
+    "super": {
+        "leather": (0.035, 0.03, 0.032, 1.0),
+        "leather_alt": (0.018, 0.018, 0.02, 1.0),
+        "dash": (0.02, 0.022, 0.025, 1.0),
+        "carpet": (0.02, 0.02, 0.022, 1.0),
+        "headliner": (0.04, 0.038, 0.036, 1.0),
+        "stitch": (0.85, 0.7, 0.12, 1.0),
+        "accent": (0.9, 0.72, 0.05, 1.0),
+        "wheel": (0.015, 0.015, 0.016, 1.0),
+        "trim": (0.18, 0.18, 0.2, 1.0),
+        "spokes": 2,
+        "flat_bottom": True,
+        "cluster": "digital",
+    },
+}
+
+
+def build_steering_wheel(
+    hub: tuple[float, float, float],
+    theme: dict,
+    mats: dict[str, bpy.types.Material],
+    collection: bpy.types.Collection,
+    tilt: float,
+) -> bpy.types.Object:
+    """Wheel built in local XY (hole +Z). Empty is tilted so +Z faces the driver."""
+    root = empty("steering_wheel", hub, collection)
+    root.rotation_euler = (-math.pi / 2 - tilt, 0.0, 0.0)
+    radius = 0.172
+    rim = create_torus("wheel_rim", radius, 0.013, (0.0, 0.0, 0.0), collection, major_segments=28, minor_segments=8)
+    assign(rim, mats["WheelLeather"])
+    parent_local(rim, root)
+
+    hub_disc = create_cylinder("wheel_hub", 0.028, 0.01, (0.0, 0.0, 0.0), collection, segments=14)
+    assign(hub_disc, mats["WheelLeather"])
+    parent_local(hub_disc, root, (0.0, 0.0, 0.0))
+
+    badge = create_cylinder("wheel_badge", 0.016, 0.005, (0.0, 0.0, 0.0), collection, segments=12)
+    assign(badge, mats["Accent"])
+    parent_local(badge, root, (0.0, 0.0, 0.008))
+
+    for side in (-1.0, 1.0):
+        hand = create_sphere(f"hand_{'L' if side < 0 else 'R'}", 0.032, (0.0, 0.0, 0.0), collection, segments=8, rings=6)
+        assign(hand, mats["Leather"])
+        parent_local(hand, root, (side * radius * 0.82, 0.02, 0.01))
+
+    return root
+
+
+def build_seat(
+    name: str,
+    x: float,
+    y: float,
+    z: float,
+    mats: dict[str, bpy.types.Material],
+    collection: bpy.types.Collection,
+    root: bpy.types.Object,
+    sport: bool,
+) -> None:
+    width = 0.38 if sport else 0.42
+    base = create_box(f"{name}_base", (width, 0.46, 0.09), (x, y, z), collection)
+    cushion = create_box(f"{name}_cushion", (width * 0.86, 0.4, 0.05), (x, y + 0.01, z + 0.06), collection)
+    back = create_box(
+        f"{name}_back", (width, 0.12, 0.52), (x, y - 0.2, z + 0.3), collection, rotation=(-0.22, 0.0, 0.0)
+    )
+    head = create_box(
+        f"{name}_headrest", (width * 0.62, 0.1, 0.14), (x, y - 0.28, z + 0.58), collection, rotation=(-0.1, 0.0, 0.0)
+    )
+    assign(base, mats["Leather"])
+    assign(cushion, mats["LeatherAlt"])
+    assign(back, mats["Leather"])
+    assign(head, mats["Leather"])
+    parent_keep(base, root)
+    parent_keep(cushion, root)
+    parent_keep(back, root)
+    parent_keep(head, root)
+    for side in (-1.0, 1.0):
+        bolster = create_box(
+            f"{name}_bolster_{'L' if side < 0 else 'R'}",
+            (0.055, 0.4, 0.12),
+            (x + side * width * 0.48, y, z + 0.08),
+            collection,
+        )
+        assign(bolster, mats["LeatherAlt"])
+        parent_keep(bolster, root)
+        side_wing = create_box(
+            f"{name}_wing_{'L' if side < 0 else 'R'}",
+            (0.05, 0.1, 0.36),
+            (x + side * width * 0.48, y - 0.18, z + 0.28),
+            collection,
+            rotation=(-0.22, 0.0, 0.0),
+        )
+        assign(side_wing, mats["Leather"])
+        parent_keep(side_wing, root)
+    stitch = create_box(f"{name}_stitch", (0.012, 0.36, 0.012), (x, y + 0.02, z + 0.09), collection)
+    assign(stitch, mats["Stitch"])
+    parent_keep(stitch, root)
+
+
+def build_interior(
+    spec: dict,
+    mats: dict[str, bpy.types.Material],
+    collection: bpy.types.Collection,
+    root: bpy.types.Object,
+    cabin_profile: list[tuple[float, float]],
+    half_w: float,
+) -> None:
+    theme = INTERIOR_THEMES[spec["interior"]]
+    cabin_front_y = cabin_profile[-1][0]
+    cabin_rear_y = cabin_profile[0][0]
+    cabin_top_z = max(z for _, z in cabin_profile)
+    belt_z = cabin_profile[-1][1]
+    cabin_len = max(0.8, cabin_front_y - cabin_rear_y)
+    driver_x = -half_w * 0.34
+    pass_x = half_w * 0.34
+    seat_y = cabin_rear_y + cabin_len * 0.38
+    floor_z = belt_z - 0.42
+    dash_y = cabin_front_y - 0.42
+    dash_z = belt_z - 0.04
+    sport = spec["interior"] in ("sport", "hatch", "super")
+
+    floor = create_box(
+        "cabin_floor",
+        (spec["width"] * 0.72, cabin_len * 0.92, 0.05),
+        (0.0, (cabin_front_y + cabin_rear_y) * 0.5, floor_z),
+        collection,
+    )
+    assign(floor, mats["Carpet"])
+    parent_keep(floor, root)
+
+    tunnel = create_box(
+        "center_tunnel",
+        (0.22, cabin_len * 0.7, 0.16),
+        (0.0, seat_y + 0.12, floor_z + 0.1),
+        collection,
+    )
+    assign(tunnel, mats["Plastic"])
+    parent_keep(tunnel, root)
+
+    shifter = create_cylinder(
+        "shifter_boot",
+        0.04,
+        0.08,
+        (0.0, seat_y + 0.22, floor_z + 0.2),
+        collection,
+        segments=10,
+    )
+    assign(shifter, mats["Leather"])
+    parent_keep(shifter, root)
+    knob = create_sphere("shifter_knob", 0.032, (0.0, seat_y + 0.22, floor_z + 0.28), collection, segments=10, rings=6)
+    assign(knob, mats["WheelTrim"])
+    parent_keep(knob, root)
+
+    handbrake = create_box(
+        "handbrake",
+        (0.03, 0.12, 0.04),
+        (0.08, seat_y + 0.05, floor_z + 0.2),
+        collection,
+        rotation=(0.45, 0.0, 0.0),
+    )
+    assign(handbrake, mats["Leather"])
+    parent_keep(handbrake, root)
+
+    build_seat("seat_driver", driver_x, seat_y, floor_z + 0.16, mats, collection, root, sport)
+    build_seat("seat_pass", pass_x, seat_y, floor_z + 0.16, mats, collection, root, sport)
+
+    dash_width = spec["width"] * 0.74
+    dash = create_box(
+        "dashboard",
+        (dash_width, 0.22, 0.14),
+        (0.0, dash_y, dash_z - 0.04),
+        collection,
+        rotation=(-0.06, 0.0, 0.0),
+    )
+    assign(dash, mats["Plastic"])
+    parent_keep(dash, root)
+
+    dash_upper = create_box(
+        "dash_cowl",
+        (dash_width * 0.88, 0.14, 0.045),
+        (0.0, dash_y + 0.06, dash_z + 0.06),
+        collection,
+        rotation=(-0.22, 0.0, 0.0),
+    )
+    assign(dash_upper, mats["Plastic"])
+    parent_keep(dash_upper, root)
+
+    defroster = create_box(
+        "defroster",
+        (dash_width * 0.62, 0.07, 0.01),
+        (0.0, dash_y + 0.12, dash_z + 0.08),
+        collection,
+        rotation=(-0.4, 0.0, 0.0),
+    )
+    assign(defroster, mats["Dark"])
+    parent_keep(defroster, root)
+
+    for i, x in enumerate((-0.28, -0.1, 0.1, 0.28)):
+        vent = create_box(
+            f"dash_vent_{i}",
+            (0.08, 0.03, 0.028),
+            (x * dash_width * 0.7, dash_y + 0.02, dash_z + 0.04),
+            collection,
+        )
+        assign(vent, mats["Dark"])
+        parent_keep(vent, root)
+
+    cluster_x = driver_x * 0.55
+    cluster_y = dash_y - 0.02
+    cluster_z = dash_z + 0.08
+    binnacle = create_box(
+        "cluster_binnacle",
+        (0.36, 0.08, 0.04),
+        (cluster_x, cluster_y + 0.03, cluster_z + 0.06),
+        collection,
+        rotation=(-0.55, 0.0, 0.0),
+    )
+    assign(binnacle, mats["Plastic"])
+    parent_keep(binnacle, root)
+
+    cluster = create_quad(
+        "cluster_screen",
+        0.32,
+        0.14,
+        (cluster_x, cluster_y - 0.01, cluster_z),
+        collection,
+        rotation=(0.22, 0.0, 0.0),
+    )
+    assign(cluster, mats["Cluster"])
+    parent_keep(cluster, root)
+
+    if spec["interior"] == "gt":
+        wood = create_box(
+            "dash_wood",
+            (dash_width * 0.7, 0.03, 0.01),
+            (0.0, dash_y - 0.02, dash_z - 0.02),
+            collection,
+        )
+        assign(wood, mats["Wood"])
+        parent_keep(wood, root)
+
+    glove = create_box(
+        "glovebox",
+        (0.26, 0.07, 0.08),
+        (pass_x * 0.65, dash_y - 0.06, dash_z - 0.05),
+        collection,
+    )
+    assign(glove, mats["Plastic"])
+    parent_keep(glove, root)
+
+    wheel_hub = (driver_x, dash_y - 0.26, dash_z + 0.01)
+    wheel = build_steering_wheel(wheel_hub, theme, mats, collection, tilt=0.38)
+    parent_keep(wheel, root)
+    column = create_cylinder(
+        "steering_column",
+        0.018,
+        0.1,
+        (wheel_hub[0], wheel_hub[1] + 0.14, wheel_hub[2] - 0.06),
+        collection,
+        rotation=(math.pi / 2 + 0.25, 0.0, 0.0),
+        segments=10,
+    )
+    assign(column, mats["Plastic"])
+    parent_keep(column, root)
+
+    for i, x in enumerate((-0.12, 0.0, 0.12)):
+        pedal = create_box(
+            f"pedal_{i}",
+            (0.05, 0.08, 0.016),
+            (driver_x + x * 0.35, dash_y - 0.16, floor_z + 0.08),
+            collection,
+            rotation=(0.6, 0.0, 0.0),
+        )
+        assign(pedal, mats["Dark"])
+        parent_keep(pedal, root)
+
+    # A / B / C pillars follow the greenhouse so the cockpit is framed.
+    glass_x = half_w * spec["glass_width"] * 0.96
+    windshield_base = cabin_profile[-1]
+    windshield_top = cabin_profile[-2]
+    rear_base = cabin_profile[0]
+    rear_top = cabin_profile[1]
+    a_dy = windshield_top[0] - windshield_base[0]
+    a_dz = windshield_top[1] - windshield_base[1]
+    a_len = hypot(a_dy, a_dz)
+    a_rot = math.atan2(a_dz, a_dy)
+    for side in (-1.0, 1.0):
+        pillar_a = create_box(
+            f"pillar_a_{'L' if side < 0 else 'R'}",
+            (0.045, a_len + 0.02, 0.055),
+            (side * glass_x, (windshield_base[0] + windshield_top[0]) * 0.5, (windshield_base[1] + windshield_top[1]) * 0.5),
+            collection,
+            rotation=(a_rot, 0.0, side * -0.06),
+        )
+        assign(pillar_a, mats["Plastic"])
+        parent_keep(pillar_a, root)
+
+        sill = create_box(
+            f"door_sill_{'L' if side < 0 else 'R'}",
+            (0.08, cabin_len * 0.7, 0.05),
+            (side * (half_w * 0.78), (cabin_front_y + cabin_rear_y) * 0.45, belt_z - 0.08),
+            collection,
+        )
+        assign(sill, mats["Plastic"])
+        parent_keep(sill, root)
+
+        door = create_box(
+            f"door_card_{'L' if side < 0 else 'R'}",
+            (0.05, cabin_len * 0.62, 0.32),
+            (side * (half_w * 0.74), seat_y + 0.1, floor_z + 0.28),
+            collection,
+        )
+        assign(door, mats["Leather"])
+        parent_keep(door, root)
+
+        armrest = create_box(
+            f"armrest_{'L' if side < 0 else 'R'}",
+            (0.08, 0.28, 0.05),
+            (side * (half_w * 0.68), seat_y + 0.08, floor_z + 0.32),
+            collection,
+        )
+        assign(armrest, mats["LeatherAlt"])
+        parent_keep(armrest, root)
+
+        window_frame = create_box(
+            f"window_frame_{'L' if side < 0 else 'R'}",
+            (0.03, cabin_len * 0.55, 0.03),
+            (side * glass_x * 0.98, (cabin_front_y + cabin_rear_y) * 0.5, belt_z + 0.02),
+            collection,
+        )
+        assign(window_frame, mats["Plastic"])
+        parent_keep(window_frame, root)
+
+        mirror_inner = create_box(
+            f"mirror_glass_{'L' if side < 0 else 'R'}",
+            (0.09, 0.12, 0.02),
+            (side * (half_w + 0.05), cabin_front_y - 0.55, belt_z + 0.12),
+            collection,
+            rotation=(0.0, 0.0, side * 0.4),
+        )
+        assign(mirror_inner, mats["Mirror"])
+        parent_keep(mirror_inner, root)
+
+    pillar_b_y = (cabin_front_y + cabin_rear_y) * 0.42
+    for side in (-1.0, 1.0):
+        pillar_b = create_box(
+            f"pillar_b_{'L' if side < 0 else 'R'}",
+            (0.06, 0.08, cabin_top_z - belt_z + 0.08),
+            (side * glass_x * 0.9, pillar_b_y, (cabin_top_z + belt_z) * 0.5),
+            collection,
+        )
+        assign(pillar_b, mats["Plastic"])
+        parent_keep(pillar_b, root)
+
+    c_dy = rear_top[0] - rear_base[0]
+    c_dz = rear_top[1] - rear_base[1]
+    c_rot = math.atan2(c_dz, c_dy)
+    for side in (-1.0, 1.0):
+        pillar_c = create_box(
+            f"pillar_c_{'L' if side < 0 else 'R'}",
+            (0.06, hypot(c_dy, c_dz) + 0.04, 0.07),
+            (side * glass_x * 0.92, (rear_base[0] + rear_top[0]) * 0.5, (rear_base[1] + rear_top[1]) * 0.5),
+            collection,
+            rotation=(c_rot, 0.0, 0.0),
+        )
+        assign(pillar_c, mats["Plastic"])
+        parent_keep(pillar_c, root)
+
+    headliner = create_box(
+        "headliner",
+        (spec["width"] * spec["glass_width"] * 0.82, cabin_len * 0.42, 0.03),
+        (0.0, (cabin_front_y + cabin_rear_y) * 0.35, cabin_top_z - 0.045),
+        collection,
+    )
+    assign(headliner, mats["Headliner"])
+    parent_keep(headliner, root)
+
+    visor_l = create_box(
+        "visor_L", (0.16, 0.06, 0.01),
+        (driver_x, windshield_top[0] - 0.12, cabin_top_z - 0.07),
+        collection, rotation=(0.05, 0.0, 0.0)
+    )
+    visor_r = create_box(
+        "visor_R", (0.16, 0.06, 0.01),
+        (pass_x, windshield_top[0] - 0.12, cabin_top_z - 0.07),
+        collection, rotation=(0.05, 0.0, 0.0)
+    )
+    assign(visor_l, mats["Headliner"])
+    assign(visor_r, mats["Headliner"])
+    parent_keep(visor_l, root)
+    parent_keep(visor_r, root)
+
+    rearview = create_box(
+        "rearview_mirror",
+        (0.14, 0.03, 0.05),
+        (0.0, windshield_top[0] - 0.08, cabin_top_z - 0.1),
+        collection,
+        rotation=(0.15, 0.0, 0.0),
+    )
+    assign(rearview, mats["Plastic"])
+    parent_keep(rearview, root)
+    rearview_glass = create_box(
+        "rearview_glass",
+        (0.12, 0.008, 0.04),
+        (0.0, windshield_top[0] - 0.1, cabin_top_z - 0.1),
+        collection,
+        rotation=(0.15, 0.0, 0.0),
+    )
+    assign(rearview_glass, mats["Mirror"])
+    parent_keep(rearview_glass, root)
+
+    # Inner windshield pane, slightly inside the greenhouse so cockpit camera sees glass.
+    wind_y = (windshield_base[0] + windshield_top[0]) * 0.5 - 0.04
+    wind_z = (windshield_base[1] + windshield_top[1]) * 0.5
+    wind_h = hypot(a_dy, a_dz) * 0.92
+    windshield = create_quad(
+        "glass_windshield",
+        spec["width"] * spec["glass_width"] * 0.88,
+        wind_h,
+        (0.0, wind_y, wind_z),
+        collection,
+        rotation=(a_rot + math.pi / 2, 0.0, 0.0),
+    )
+    assign(windshield, mats["Windshield"])
+    parent_keep(windshield, root)
+
+    for i, side in enumerate((-0.18, 0.18)):
+        wiper = create_box(
+            f"wiper_{i}",
+            (0.012, 0.42, 0.012),
+            (side, windshield_base[0] - 0.02, belt_z + 0.02),
+            collection,
+            rotation=(a_rot + 0.15, 0.0, side * 0.4),
+        )
+        assign(wiper, mats["Dark"])
+        parent_keep(wiper, root)
+
+    for side in (-1.0, 1.0):
+        sleeve = create_box(
+            f"arm_sleeve_{'L' if side < 0 else 'R'}",
+            (0.06, 0.18, 0.06),
+            (driver_x + side * 0.16, (seat_y + wheel_hub[1]) * 0.55, floor_z + 0.38),
+            collection,
+            rotation=(0.85, 0.0, side * 0.28),
+        )
+        assign(sleeve, mats["LeatherAlt"])
+        parent_keep(sleeve, root)
+
+    # Camera sockets in Blender space: X right, Y forward, Z up.
+    eye_y = seat_y + 0.08
+    eye_z = min(floor_z + 0.64, cabin_top_z - 0.2)
+    cockpit = empty("cam_cockpit", (driver_x * 0.78, eye_y, eye_z), collection)
+    parent_keep(cockpit, root)
+    cockpit_look = empty("cam_cockpit_look", (driver_x * 0.12, cabin_front_y + 6.0, belt_z - 0.08), collection)
+    parent_keep(cockpit_look, root)
+
+    dash_cam = empty("cam_dash", (0.0, dash_y - 0.08, dash_z + 0.22), collection)
+    parent_keep(dash_cam, root)
+    dash_look = empty("cam_dash_look", (0.0, cabin_front_y + 7.5, belt_z - 0.18), collection)
+    parent_keep(dash_look, root)
+
+    hood_cam = empty("cam_hood", (0.0, cabin_front_y + 0.32, belt_z + 0.16), collection)
+    parent_keep(hood_cam, root)
+    hood_look = empty("cam_hood_look", (0.0, cabin_front_y + 14.0, belt_z - 0.22), collection)
+    parent_keep(hood_look, root)
+
+    light_anchor = empty("interior_light", (0.0, seat_y + 0.1, floor_z + 0.55), collection)
+    parent_keep(light_anchor, root)
 
 
 def build_wheel(
@@ -409,10 +1003,12 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
     reset_scene()
     collection = bpy.context.scene.collection
     root = empty("CarRoot", (0.0, 0.0, 0.0), collection)
+    theme = INTERIOR_THEMES[spec["interior"]]
 
     mats = {
         "BodyPaint": make_material("BodyPaint", spec["paint"], metallic=0.64, roughness=0.2),
         "Glass": make_material("Glass", (0.035, 0.075, 0.12, 0.74), metallic=0.28, roughness=0.07, alpha=0.74),
+        "Windshield": make_material("Windshield", (0.55, 0.7, 0.82, 0.14), metallic=0.05, roughness=0.04, alpha=0.14),
         "Trim": make_material("Trim", (0.06, 0.07, 0.09, 1.0), metallic=0.35, roughness=0.55),
         "Chrome": make_material("Chrome", (0.85, 0.88, 0.90, 1.0), metallic=0.95, roughness=0.16),
         "Rubber": make_material("Rubber", (0.03, 0.03, 0.035, 1.0), metallic=0.0, roughness=0.95),
@@ -420,7 +1016,26 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
         "Rim": make_material("Rim", spec["rim"], metallic=0.85, roughness=0.28),
         "Brake": make_material("Brake", (0.35, 0.36, 0.38, 1.0), metallic=0.7, roughness=0.45),
         "Caliper": make_material("Caliper", (0.68, 0.045, 0.06, 1.0), metallic=0.58, roughness=0.24),
-        "Interior": make_material("Interior", (0.022, 0.028, 0.04, 1.0), metallic=0.08, roughness=0.62),
+        "Leather": make_material("Leather", theme["leather"], metallic=0.02, roughness=0.72),
+        "LeatherAlt": make_material("LeatherAlt", theme["leather_alt"], metallic=0.02, roughness=0.68),
+        "Plastic": make_material("Plastic", theme["dash"], metallic=0.08, roughness=0.58),
+        "Carpet": make_material("Carpet", theme["carpet"], metallic=0.0, roughness=0.95),
+        "Headliner": make_material("Headliner", theme["headliner"], metallic=0.0, roughness=0.88),
+        "Stitch": make_material("Stitch", theme["stitch"], metallic=0.0, roughness=0.6),
+        "Accent": make_material("Accent", theme["accent"], metallic=0.35, roughness=0.35),
+        "WheelLeather": make_material("WheelLeather", theme["wheel"], metallic=0.04, roughness=0.55),
+        "WheelTrim": make_material("WheelTrim", theme["trim"], metallic=0.72, roughness=0.28),
+        "Wood": make_material("Wood", (0.28, 0.16, 0.08, 1.0), metallic=0.05, roughness=0.45),
+        "Mirror": make_material("Mirror", (0.55, 0.62, 0.7, 1.0), metallic=0.92, roughness=0.08),
+        "Cluster": make_material(
+            "Cluster",
+            (0.02, 0.03, 0.04, 1.0),
+            metallic=0.1,
+            roughness=0.35,
+            emission=(0.15, 0.55, 0.75, 1.0),
+            emission_strength=0.8,
+        ),
+        "ClusterChrome": make_material("ClusterChrome", (0.78, 0.8, 0.84, 1.0), metallic=0.9, roughness=0.18),
         "LightHead": make_material(
             "LightHead",
             (0.9, 0.94, 1.0, 1.0),
@@ -486,19 +1101,8 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
     assign(glass, mats["Glass"])
     parent_keep(glass, root)
 
-    cabin_mid_y = (cabin_profile[0][0] + cabin_profile[-1][0]) * 0.5
     cabin_top_z = max(z for _, z in cabin_profile)
     for side in (-1.0, 1.0):
-        pillar = create_box(
-            f"pillar_{'L' if side < 0 else 'R'}",
-            (0.06, 0.08, 0.42),
-            (side * half_w * 0.72, cabin_mid_y, (cabin_profile[0][1] + cabin_top_z) * 0.5),
-            collection,
-            rotation=(0.12, 0.0, 0.0),
-        )
-        assign(pillar, mats["BodyPaint"])
-        parent_keep(pillar, root)
-
         handle = create_box(
             f"door_handle_{'L' if side < 0 else 'R'}", (0.10, 0.20, 0.035),
             (side * (half_w + 0.012), -0.28, ride + 0.66), collection
@@ -513,26 +1117,7 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
         assign(vent, mats["Dark"])
         parent_keep(vent, root)
 
-    for side in (-1.0, 1.0):
-        seat_base = create_box(
-            f"seat_base_{'L' if side < 0 else 'R'}", (0.34, 0.42, 0.14),
-            (side * half_w * 0.32, -0.18, ride + 0.67), collection
-        )
-        seat_back = create_box(
-            f"seat_back_{'L' if side < 0 else 'R'}", (0.34, 0.16, 0.44),
-            (side * half_w * 0.32, -0.42, ride + 0.84), collection, rotation=(-0.18, 0.0, 0.0)
-        )
-        assign(seat_base, mats["Interior"])
-        assign(seat_back, mats["Interior"])
-        parent_keep(seat_base, root)
-        parent_keep(seat_back, root)
-
-    dashboard = create_box("dashboard", (spec["width"] * 0.62, 0.22, 0.16), (0.0, 0.42, ride + 0.93), collection)
-    steering = create_cylinder("steering_wheel", 0.16, 0.035, (-half_w * 0.3, 0.23, ride + 0.92), collection, rotation=(math.pi / 2, 0, 0), segments=18)
-    assign(dashboard, mats["Interior"])
-    assign(steering, mats["Trim"])
-    parent_keep(dashboard, root)
-    parent_keep(steering, root)
+    build_interior(spec, mats, collection, root, cabin_profile, half_w)
 
     front_y = max(y for y, _ in body_profile) + 0.02
     rear_y = min(y for y, _ in body_profile) - 0.02
