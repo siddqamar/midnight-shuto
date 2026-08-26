@@ -14,6 +14,62 @@ const halfExtents: Record<VehicleId, THREE.Vector3> = {
 
 const templates = new Map<VehicleId, THREE.Group>();
 let preloadPromise: Promise<void> | null = null;
+let paintMaps: { roughnessMap: THREE.CanvasTexture; bumpMap: THREE.CanvasTexture } | null = null;
+let glowMap: THREE.CanvasTexture | null = null;
+
+function makeNoiseTexture(size: number, contrast: number): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d');
+  if (!context) return new THREE.CanvasTexture(canvas);
+  const image = context.createImageData(size, size);
+  for (let index = 0; index < image.data.length; index += 4) {
+    const value = 150 + Math.random() * contrast;
+    image.data[index] = value;
+    image.data[index + 1] = value;
+    image.data[index + 2] = value;
+    image.data[index + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  texture.repeat.set(4, 8);
+  texture.colorSpace = THREE.NoColorSpace;
+  return texture;
+}
+
+function getPaintMaps(): { roughnessMap: THREE.CanvasTexture; bumpMap: THREE.CanvasTexture } {
+  if (!paintMaps) {
+    paintMaps = {
+      roughnessMap: makeNoiseTexture(128, 55),
+      bumpMap: makeNoiseTexture(128, 40)
+    };
+  }
+  return paintMaps;
+}
+
+function getGlowMap(): THREE.CanvasTexture {
+  if (glowMap) return glowMap;
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d');
+  if (context) {
+    const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.28, 'rgba(190,220,255,0.55)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, size, size);
+  }
+  glowMap = new THREE.CanvasTexture(canvas);
+  glowMap.colorSpace = THREE.SRGBColorSpace;
+  return glowMap;
+}
 
 function modelUrl(id: VehicleId): string {
   const base = import.meta.env.BASE_URL || './';
@@ -34,6 +90,7 @@ function cloneMaterials(root: THREE.Object3D): void {
 }
 
 function upgradeMaterials(root: THREE.Object3D): void {
+  const maps = getPaintMaps();
   root.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return;
     const materials = Array.isArray(child.material) ? child.material : [child.material];
@@ -43,52 +100,113 @@ function upgradeMaterials(root: THREE.Object3D): void {
       if (material.name === 'BodyPaint') {
         const paint = new THREE.MeshPhysicalMaterial({
           color: material.color,
-          metalness: Math.max(material.metalness, 0.58),
-          roughness: Math.min(material.roughness, 0.21),
-          clearcoat: 0.92,
-          clearcoatRoughness: 0.1,
-          envMapIntensity: 1.15
+          metalness: 0.52,
+          roughness: 0.22,
+          roughnessMap: maps.roughnessMap,
+          bumpMap: maps.bumpMap,
+          bumpScale: 0.006,
+          clearcoat: 1,
+          clearcoatRoughness: 0.04,
+          sheen: 0.22,
+          sheenColor: material.color.clone().multiplyScalar(1.08),
+          sheenRoughness: 0.45,
+          envMapIntensity: 1.35
         });
         paint.name = material.name;
         return paint;
       }
 
       if (material.name === 'Glass') {
-        material.color.setRGB(0.035, 0.075, 0.12);
-        material.metalness = 0.22;
-        material.roughness = 0.08;
-        material.transparent = true;
-        material.opacity = 0.58;
-        material.envMapIntensity = 1.35;
-        material.depthWrite = false;
-        material.side = THREE.FrontSide;
-      } else if (material.name === 'Windshield') {
+        const glass = new THREE.MeshPhysicalMaterial({
+          color: 0x071018,
+          metalness: 0.08,
+          roughness: 0.045,
+          transparent: true,
+          opacity: 0.78,
+          envMapIntensity: 1.85,
+          depthWrite: false,
+          side: THREE.FrontSide
+        });
+        glass.name = 'Glass';
+        return glass;
+      }
+
+      if (material.name === 'Windshield') {
         const glass = new THREE.MeshPhysicalMaterial({
           color: 0x9eb8c8,
           metalness: 0.04,
-          roughness: 0.04,
+          roughness: 0.03,
           transparent: true,
-          opacity: 0.16,
-          transmission: 0.0,
-          envMapIntensity: 1.6,
+          opacity: 0.14,
+          envMapIntensity: 1.7,
           depthWrite: false,
           side: THREE.DoubleSide
         });
         glass.name = 'Windshield';
         return glass;
-      } else if (material.name === 'LightHead') {
-        material.color.setHex(0xddeeff);
-        material.emissive.setHex(0x8fc9ff);
-        material.emissiveIntensity = Math.max(material.emissiveIntensity, 2.8);
-        material.roughness = 0.14;
+      }
+
+      if (material.name === 'LightLens') {
+        const lens = new THREE.MeshPhysicalMaterial({
+          color: 0xcfe6ff,
+          metalness: 0.05,
+          roughness: 0.04,
+          transparent: true,
+          opacity: 0.28,
+          envMapIntensity: 1.6,
+          depthWrite: false
+        });
+        lens.name = 'LightLens';
+        return lens;
+      }
+
+      if (material.name === 'LightHead') {
+        material.color.setHex(0xe8f4ff);
+        material.emissive.setHex(0xb7dcff);
+        material.emissiveIntensity = Math.max(material.emissiveIntensity, 3.4);
+        material.roughness = 0.08;
+        material.metalness = 0.12;
       } else if (material.name === 'LightTail') {
-        material.color.setHex(0xff243f);
-        material.emissive.setHex(0xa7071f);
-        material.emissiveIntensity = Math.max(material.emissiveIntensity, 2.1);
-      } else if (material.name === 'Chrome' || material.name === 'Rim') {
-        material.metalness = Math.max(material.metalness, 0.88);
-        material.roughness = Math.min(material.roughness, 0.2);
-        material.envMapIntensity = 1.3;
+        material.color.setHex(0xff2a42);
+        material.emissive.setHex(0xc10820);
+        material.emissiveIntensity = Math.max(material.emissiveIntensity, 2.6);
+        material.roughness = 0.16;
+      } else if (material.name === 'Chrome') {
+        const chrome = new THREE.MeshPhysicalMaterial({
+          color: 0xdde4ec,
+          metalness: 1,
+          roughness: 0.1,
+          envMapIntensity: 1.7,
+          clearcoat: 0.35,
+          clearcoatRoughness: 0.08
+        });
+        chrome.name = 'Chrome';
+        return chrome;
+      } else if (material.name === 'Rim') {
+        const rim = new THREE.MeshPhysicalMaterial({
+          color: material.color,
+          metalness: 0.94,
+          roughness: 0.16,
+          envMapIntensity: 1.45
+        });
+        rim.name = 'Rim';
+        return rim;
+      } else if (material.name === 'Rubber' || material.name === 'TireWall') {
+        material.color.setHex(material.name === 'Rubber' ? 0x09090c : 0x16181c);
+        material.metalness = 0.02;
+        material.roughness = material.name === 'Rubber' ? 0.94 : 0.78;
+      } else if (material.name === 'Brake') {
+        material.metalness = 0.86;
+        material.roughness = 0.3;
+        material.envMapIntensity = 1.2;
+      } else if (material.name === 'Caliper') {
+        material.metalness = 0.55;
+        material.roughness = 0.28;
+        material.envMapIntensity = 1.1;
+      } else if (material.name === 'Mirror') {
+        material.metalness = 1;
+        material.roughness = 0.05;
+        material.envMapIntensity = 1.8;
       }
       return material;
     });
@@ -97,23 +215,62 @@ function upgradeMaterials(root: THREE.Object3D): void {
 }
 
 function addHeadlightRig(root: THREE.Group, extents: THREE.Vector3): void {
+  root.updateMatrixWorld(true);
   const rig = new THREE.Group();
   rig.name = 'headlight_rig';
-  const lensMaterial = new THREE.MeshBasicMaterial({ color: 0xc8e6ff, transparent: true, opacity: 0.55 });
-  const front = extents.z + 0.035;
+  const glowMaterial = new THREE.SpriteMaterial({
+    map: getGlowMap(),
+    color: 0xc4e4ff,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    opacity: 0.72
+  });
 
-  for (const side of [-1, 1]) {
-    const lens = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), lensMaterial);
-    lens.position.set(side * (extents.x * 0.64), 0.48, front);
-    lens.scale.set(1.45, 0.55, 0.45);
-    rig.add(lens);
+  const positions: THREE.Vector3[] = [];
+  for (const name of ['head_socket_L', 'head_socket_R']) {
+    const socket = root.getObjectByName(name);
+    if (socket) positions.push(root.worldToLocal(socket.getWorldPosition(new THREE.Vector3())));
+  }
+  if (positions.length < 2) {
+    positions.length = 0;
+    positions.push(
+      new THREE.Vector3(-extents.x * 0.58, 0.52, extents.z + 0.02),
+      new THREE.Vector3(extents.x * 0.58, 0.52, extents.z + 0.02)
+    );
+  }
 
-    const light = new THREE.SpotLight(0xb8dcff, 22, 30, 0.38, 0.78, 2);
-    light.position.set(side * (extents.x * 0.58), 0.52, front - 0.03);
-    light.target.position.set(side * 0.7, 0.05, 13);
+  for (const [index, position] of positions.entries()) {
+    const side = position.x < 0 ? -1 : 1;
+    const glow = new THREE.Sprite(glowMaterial);
+    glow.name = `head_glow_${index}`;
+    glow.position.copy(position);
+    glow.position.z += 0.04;
+    glow.scale.set(0.55, 0.32, 1);
+    rig.add(glow);
+
+    const light = new THREE.SpotLight(0xc4e2ff, 28, 34, 0.36, 0.72, 1.8);
+    light.position.copy(position);
+    light.target.position.set(side * 0.55, 0.02, 14);
     light.castShadow = false;
     rig.add(light, light.target);
   }
+
+  const shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(1.05, 22),
+    new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.38,
+      depthWrite: false
+    })
+  );
+  shadow.name = 'contact_shadow';
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = 0.02;
+  shadow.scale.set(extents.x * 1.15, extents.z * 1.05, 1);
+  shadow.renderOrder = -1;
+  rig.add(shadow);
 
   root.add(rig);
 }
@@ -251,6 +408,9 @@ export function instantiateVehicleModel(vehicleId: VehicleId, color: string): In
     material.color.set(color);
     material.metalness = Math.max(material.metalness, 0.45);
     material.roughness = Math.min(material.roughness, 0.35);
+    if (material instanceof THREE.MeshPhysicalMaterial) {
+      material.sheenColor.set(color).multiplyScalar(1.12);
+    }
   }
   const bodyMaterial = bodyMaterials[0];
 

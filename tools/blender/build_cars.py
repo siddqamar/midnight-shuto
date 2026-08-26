@@ -54,6 +54,8 @@ def make_material(
     emission: tuple[float, float, float, float] | None = None,
     emission_strength: float = 0.0,
     alpha: float = 1.0,
+    coat: float = 0.0,
+    coat_roughness: float = 0.08,
 ) -> bpy.types.Material:
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
@@ -67,6 +69,10 @@ def make_material(
     bsdf.inputs["Roughness"].default_value = roughness
     if "Alpha" in bsdf.inputs:
         bsdf.inputs["Alpha"].default_value = alpha
+    if coat > 0.0 and "Coat Weight" in bsdf.inputs:
+        bsdf.inputs["Coat Weight"].default_value = coat
+        if "Coat Roughness" in bsdf.inputs:
+            bsdf.inputs["Coat Roughness"].default_value = coat_roughness
     if emission is not None:
         if "Emission Color" in bsdf.inputs:
             bsdf.inputs["Emission Color"].default_value = emission
@@ -90,9 +96,19 @@ def assign(obj: bpy.types.Object, mat: bpy.types.Material) -> None:
         data.materials.append(mat)
 
 
-def smooth(obj: bpy.types.Object) -> None:
+def smooth(obj: bpy.types.Object, angle: float = 55.0) -> None:
     for poly in obj.data.polygons:
         poly.use_smooth = True
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    try:
+        bpy.ops.object.shade_auto_smooth(angle=math.radians(angle))
+    except Exception:
+        try:
+            bpy.ops.object.shade_smooth()
+        except Exception:
+            pass
+    obj.select_set(False)
 
 
 def apply_mods(obj: bpy.types.Object) -> None:
@@ -313,6 +329,57 @@ def extrude_profile(
     return obj
 
 
+def cut_wheel_wells(body: bpy.types.Object, spec: dict, collection: bpy.types.Collection) -> None:
+    """Bite circular wells into the body so wheels sit in the fenders."""
+    if spec["class"] == "supercar":
+        return
+    wr = spec["wheel_radius"]
+    wx = spec["wheel_x"]
+    radius = wr + 0.06
+    depth = spec["wheel_width"] + 0.18
+    for name, x, y in (
+        ("well_fl", -wx, spec["front_axle"]),
+        ("well_fr", wx, spec["front_axle"]),
+        ("well_rl", -wx, spec["rear_axle"]),
+        ("well_rr", wx, spec["rear_axle"]),
+    ):
+        sign = -1.0 if x < 0 else 1.0
+        cutter = create_cylinder(
+            name,
+            radius,
+            depth,
+            (x + sign * 0.16, y, wr),
+            collection,
+            rotation=(0.0, math.pi / 2, 0.0),
+            segments=28,
+        )
+        modifier = body.modifiers.new(name, "BOOLEAN")
+        modifier.operation = "DIFFERENCE"
+        modifier.object = cutter
+        try:
+            modifier.solver = "FAST"
+        except Exception:
+            pass
+        apply_mods(body)
+        mesh = cutter.data
+        bpy.data.objects.remove(cutter, do_unlink=True)
+        if mesh and mesh.users == 0:
+            bpy.data.meshes.remove(mesh)
+    smooth(body, 48.0)
+
+
+def add_lamp_glass(
+    name: str,
+    size: tuple[float, float, float],
+    location: tuple[float, float, float],
+    collection: bpy.types.Collection,
+    rotation: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> bpy.types.Object:
+    lamp = create_box(name, size, location, collection, rotation)
+    smooth(lamp, 40.0)
+    return lamp
+
+
 CARS = {
     "kaze": {
         "class": "sport_compact",
@@ -326,11 +393,11 @@ CARS = {
         "front_axle": 1.28,
         "rear_axle": -1.30,
         "body": [
-            (-2.10, 0.18), (-2.10, 0.62), (-1.85, 0.78), (-1.15, 0.86),
-            (-0.55, 0.88), (0.55, 0.86), (1.25, 0.78), (1.75, 0.68),
-            (2.05, 0.52), (2.12, 0.30), (2.12, 0.18),
+            (-2.14, 0.16), (-2.12, 0.56), (-1.78, 0.70), (-1.18, 0.80),
+            (-0.48, 0.84), (0.42, 0.82), (1.12, 0.74), (1.58, 0.62),
+            (1.92, 0.48), (2.12, 0.30), (2.16, 0.16),
         ],
-        "cabin": [(-0.95, 0.86), (-0.70, 1.28), (0.35, 1.30), (0.95, 0.88)],
+        "cabin": [(-0.92, 0.84), (-0.64, 1.34), (0.38, 1.36), (1.00, 0.86)],
         "glass_width": 0.78,
         "spoiler": False,
         "hood_scoop": False,
@@ -352,11 +419,11 @@ CARS = {
         "front_axle": 1.22,
         "rear_axle": -1.18,
         "body": [
-            (-2.00, 0.18), (-2.00, 0.78), (-1.55, 0.92), (-0.40, 0.96),
-            (0.70, 0.96), (1.35, 0.88), (1.80, 0.72), (2.00, 0.48),
-            (2.05, 0.28), (2.05, 0.18),
+            (-2.04, 0.16), (-2.02, 0.70), (-1.58, 0.88), (-0.42, 0.94),
+            (0.62, 0.94), (1.28, 0.86), (1.72, 0.70), (1.96, 0.48),
+            (2.06, 0.28), (2.08, 0.16),
         ],
-        "cabin": [(-1.35, 0.94), (-1.15, 1.42), (0.55, 1.40), (1.05, 0.96)],
+        "cabin": [(-1.32, 0.94), (-1.08, 1.46), (0.52, 1.44), (1.08, 0.96)],
         "glass_width": 0.80,
         "spoiler": True,
         "hood_scoop": True,
@@ -378,11 +445,11 @@ CARS = {
         "front_axle": 1.42,
         "rear_axle": -1.40,
         "body": [
-            (-2.30, 0.18), (-2.28, 0.70), (-1.80, 0.86), (-0.90, 0.90),
-            (0.40, 0.88), (1.35, 0.80), (2.00, 0.62), (2.30, 0.42),
-            (2.35, 0.26), (2.35, 0.18),
+            (-2.34, 0.16), (-2.30, 0.64), (-1.82, 0.82), (-0.92, 0.88),
+            (0.28, 0.86), (1.28, 0.78), (1.92, 0.60), (2.28, 0.40),
+            (2.38, 0.24), (2.40, 0.16),
         ],
-        "cabin": [(-1.20, 0.90), (-0.85, 1.28), (0.45, 1.30), (0.85, 0.92)],
+        "cabin": [(-1.16, 0.88), (-0.78, 1.32), (0.42, 1.34), (0.90, 0.90)],
         "glass_width": 0.78,
         "spoiler": False,
         "hood_scoop": False,
@@ -404,11 +471,11 @@ CARS = {
         "front_axle": 1.35,
         "rear_axle": -1.28,
         "body": [
-            (-2.20, 0.16), (-2.15, 0.72), (-1.40, 0.86), (-0.40, 0.82),
-            (0.80, 0.70), (1.55, 0.55), (2.15, 0.38), (2.25, 0.24),
-            (2.25, 0.16),
+            (-2.22, 0.14), (-2.16, 0.66), (-1.42, 0.82), (-0.38, 0.78),
+            (0.72, 0.66), (1.48, 0.52), (2.08, 0.36), (2.26, 0.22),
+            (2.28, 0.14),
         ],
-        "cabin": [(-1.05, 0.84), (-0.70, 1.18), (0.35, 1.18), (0.95, 0.78)],
+        "cabin": [(-1.02, 0.82), (-0.62, 1.22), (0.32, 1.22), (0.98, 0.76)],
         "glass_width": 0.82,
         "spoiler": True,
         "hood_scoop": False,
@@ -935,56 +1002,119 @@ def build_wheel(
     mats: dict[str, bpy.types.Material],
 ) -> bpy.types.Object:
     root = empty(name, location, collection)
-
-    # Default cylinder is along Z; rotate to axle along X (sideways)
+    outer = -1.0 if name.endswith("_fl") or name.endswith("_rl") else 1.0
     axle_rot = (0.0, math.pi / 2, 0.0)
+    spoke_count = 5
 
-    tire = create_cylinder(f"{name}_tire", radius, width, (0, 0, 0), collection, rotation=axle_rot, segments=32)
+    tire = create_cylinder(f"{name}_tire", radius, width, (0, 0, 0), collection, rotation=axle_rot, segments=40)
     assign(tire, mats["Rubber"])
-    smooth(tire)
+    smooth(tire, 35.0)
     parent_keep(tire, root)
 
-    sidewall = create_cylinder(f"{name}_sidewall", radius * 0.88, width * 1.015, (0, 0, 0), collection, rotation=axle_rot, segments=32)
+    for groove, scale in enumerate((0.72, 0.0, -0.72)):
+        tread = create_cylinder(
+            f"{name}_tread_{groove}",
+            radius * 1.012,
+            width * 0.07,
+            (scale * width * 0.22, 0.0, 0.0),
+            collection,
+            rotation=axle_rot,
+            segments=40,
+        )
+        assign(tread, mats["Dark"])
+        parent_keep(tread, root)
+
+    sidewall = create_cylinder(
+        f"{name}_sidewall", radius * 0.86, width * 1.02, (0, 0, 0), collection, rotation=axle_rot, segments=36
+    )
     assign(sidewall, mats["TireWall"])
-    smooth(sidewall)
+    smooth(sidewall, 35.0)
     parent_keep(sidewall, root)
 
-    rim = create_cylinder(f"{name}_rim", radius * 0.62, width * 0.58, (0, 0, 0), collection, rotation=axle_rot, segments=24)
-    assign(rim, mats["Rim"])
-    smooth(rim)
-    parent_keep(rim, root)
+    barrel = create_cylinder(
+        f"{name}_barrel", radius * 0.58, width * 0.72, (0, 0, 0), collection, rotation=axle_rot, segments=28
+    )
+    assign(barrel, mats["Rim"])
+    smooth(barrel, 30.0)
+    parent_keep(barrel, root)
 
-    hub = create_cylinder(f"{name}_hub", radius * 0.18, width * 0.62, (0, 0, 0), collection, rotation=axle_rot, segments=12)
-    assign(hub, mats["Chrome"])
-    parent_keep(hub, root)
+    lip = create_cylinder(
+        f"{name}_lip",
+        radius * 0.67,
+        width * 0.08,
+        (outer * width * 0.30, 0.0, 0.0),
+        collection,
+        rotation=axle_rot,
+        segments=32,
+    )
+    assign(lip, mats["Chrome"])
+    smooth(lip, 30.0)
+    parent_keep(lip, root)
 
-    disc = create_cylinder(f"{name}_disc", radius * 0.46, width * 0.1, (0, 0, 0), collection, rotation=axle_rot, segments=20)
+    disc = create_cylinder(
+        f"{name}_disc",
+        radius * 0.48,
+        width * 0.08,
+        (outer * width * 0.08, 0.0, 0.0),
+        collection,
+        rotation=axle_rot,
+        segments=24,
+    )
     assign(disc, mats["Brake"])
     parent_keep(disc, root)
 
+    hub = create_cylinder(
+        f"{name}_hub",
+        radius * 0.16,
+        width * 0.55,
+        (outer * width * 0.12, 0.0, 0.0),
+        collection,
+        rotation=axle_rot,
+        segments=14,
+    )
+    assign(hub, mats["Chrome"])
+    parent_keep(hub, root)
+
+    cap = create_cylinder(
+        f"{name}_cap",
+        radius * 0.09,
+        width * 0.12,
+        (outer * width * 0.34, 0.0, 0.0),
+        collection,
+        rotation=axle_rot,
+        segments=12,
+    )
+    assign(cap, mats["Accent"])
+    parent_keep(cap, root)
+
     caliper = create_box(
-        f"{name}_caliper", (width * 0.16, radius * 0.22, radius * 0.36),
-        (width * 0.42, radius * 0.14, 0.0), collection
+        f"{name}_caliper",
+        (width * 0.18, radius * 0.20, radius * 0.34),
+        (outer * width * 0.22, radius * 0.16, 0.0),
+        collection,
     )
     assign(caliper, mats["Caliper"])
     parent_keep(caliper, root)
 
-    for i in range(7):
-        angle = (i / 7.0) * math.tau
+    for index in range(spoke_count):
+        angle = (index / spoke_count) * math.tau
         spoke = create_box(
-            f"{name}_spoke_{i}",
-            (width * 0.12, radius * 0.08, radius * 0.55),
-            (0.0, math.sin(angle) * radius * 0.28, math.cos(angle) * radius * 0.28),
+            f"{name}_spoke_{index}",
+            (width * 0.11, radius * 0.075, radius * 0.52),
+            (outer * width * 0.10, math.sin(angle) * radius * 0.30, math.cos(angle) * radius * 0.30),
             collection,
             rotation=(angle, 0.0, 0.0),
         )
         assign(spoke, mats["Rim"])
         parent_keep(spoke, root)
-
         lug = create_cylinder(
-            f"{name}_lug_{i}", radius * 0.052, width * 0.68,
-            (0.0, math.sin(angle) * radius * 0.18, math.cos(angle) * radius * 0.18),
-            collection, rotation=axle_rot, segments=8
+            f"{name}_lug_{index}",
+            radius * 0.028,
+            width * 0.22,
+            (outer * width * 0.28, math.sin(angle) * radius * 0.12, math.cos(angle) * radius * 0.12),
+            collection,
+            rotation=axle_rot,
+            segments=8,
         )
         assign(lug, mats["Chrome"])
         parent_keep(lug, root)
@@ -999,16 +1129,18 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
     theme = INTERIOR_THEMES[spec["interior"]]
 
     mats = {
-        "BodyPaint": make_material("BodyPaint", spec["paint"], metallic=0.64, roughness=0.2),
-        "Glass": make_material("Glass", (0.035, 0.075, 0.12, 0.74), metallic=0.28, roughness=0.07, alpha=0.74),
-        "Windshield": make_material("Windshield", (0.55, 0.7, 0.82, 0.14), metallic=0.05, roughness=0.04, alpha=0.14),
-        "Trim": make_material("Trim", (0.06, 0.07, 0.09, 1.0), metallic=0.35, roughness=0.55),
-        "Chrome": make_material("Chrome", (0.85, 0.88, 0.90, 1.0), metallic=0.95, roughness=0.16),
+        "BodyPaint": make_material(
+            "BodyPaint", spec["paint"], metallic=0.72, roughness=0.18, coat=1.0, coat_roughness=0.045
+        ),
+        "Glass": make_material("Glass", (0.02, 0.05, 0.08, 0.82), metallic=0.12, roughness=0.05, alpha=0.82),
+        "Windshield": make_material("Windshield", (0.55, 0.7, 0.82, 0.16), metallic=0.04, roughness=0.03, alpha=0.16),
+        "Trim": make_material("Trim", (0.05, 0.055, 0.07, 1.0), metallic=0.42, roughness=0.42),
+        "Chrome": make_material("Chrome", (0.88, 0.90, 0.93, 1.0), metallic=1.0, roughness=0.1),
         "Rubber": make_material("Rubber", (0.03, 0.03, 0.035, 1.0), metallic=0.0, roughness=0.95),
         "TireWall": make_material("TireWall", (0.08, 0.085, 0.095, 1.0), metallic=0.02, roughness=0.72),
-        "Rim": make_material("Rim", spec["rim"], metallic=0.85, roughness=0.28),
-        "Brake": make_material("Brake", (0.35, 0.36, 0.38, 1.0), metallic=0.7, roughness=0.45),
-        "Caliper": make_material("Caliper", (0.68, 0.045, 0.06, 1.0), metallic=0.58, roughness=0.24),
+        "Rim": make_material("Rim", spec["rim"], metallic=0.92, roughness=0.18),
+        "Brake": make_material("Brake", (0.42, 0.43, 0.46, 1.0), metallic=0.82, roughness=0.32),
+        "Caliper": make_material("Caliper", (0.72, 0.04, 0.05, 1.0), metallic=0.62, roughness=0.22),
         "Leather": make_material("Leather", theme["leather"], metallic=0.02, roughness=0.72),
         "LeatherAlt": make_material("LeatherAlt", theme["leather_alt"], metallic=0.02, roughness=0.68),
         "Plastic": make_material("Plastic", theme["dash"], metallic=0.08, roughness=0.58),
@@ -1031,19 +1163,20 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
         "ClusterChrome": make_material("ClusterChrome", (0.78, 0.8, 0.84, 1.0), metallic=0.9, roughness=0.18),
         "LightHead": make_material(
             "LightHead",
-            (0.9, 0.94, 1.0, 1.0),
-            metallic=0.1,
-            roughness=0.15,
-            emission=(0.7, 0.85, 1.0, 1.0),
-            emission_strength=2.2,
+            (0.92, 0.96, 1.0, 1.0),
+            metallic=0.08,
+            roughness=0.08,
+            emission=(0.78, 0.9, 1.0, 1.0),
+            emission_strength=3.4,
         ),
+        "LightLens": make_material("LightLens", (0.72, 0.84, 0.95, 0.28), metallic=0.05, roughness=0.04, alpha=0.28),
         "LightTail": make_material(
             "LightTail",
-            (0.95, 0.12, 0.16, 1.0),
-            metallic=0.1,
-            roughness=0.25,
-            emission=(0.7, 0.05, 0.08, 1.0),
-            emission_strength=1.8,
+            (0.95, 0.1, 0.14, 1.0),
+            metallic=0.08,
+            roughness=0.18,
+            emission=(0.85, 0.04, 0.06, 1.0),
+            emission_strength=2.4,
         ),
         "Indicator": make_material(
             "Indicator",
@@ -1070,63 +1203,156 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
         taper_nose=0.12 if spec["class"] == "supercar" else 0.08,
         taper_tail=0.05 if spec["class"] == "supercar" else 0.03,
     )
+    cut_wheel_wells(body, spec, collection)
     assign(body, mats["BodyPaint"])
     parent_keep(body, root)
-
-    for side in (-1.0, 1.0):
-        skirt = create_box(
-            f"skirt_{'L' if side < 0 else 'R'}",
-            (0.06, spec["length"] * 0.72, 0.10),
-            (side * (half_w + 0.01), 0.05, ride + 0.22),
-            collection,
-        )
-        assign(skirt, mats["Trim"])
-        parent_keep(skirt, root)
 
     glass = extrude_profile(
         "cabin_glass",
         cabin_profile,
-        half_w * spec["glass_width"],
+        half_w * spec["glass_width"] * 0.96,
         collection,
-        taper_nose=0.06,
-        taper_tail=0.02,
+        taper_nose=0.08,
+        taper_tail=0.03,
     )
     assign(glass, mats["Glass"])
     parent_keep(glass, root)
 
     cabin_top_z = max(z for _, z in cabin_profile)
+    roof_y0, roof_z0 = cabin_profile[1]
+    roof_y1, roof_z1 = cabin_profile[2]
+    roof_len = abs(roof_y1 - roof_y0) + 0.08
+    roof = create_box(
+        "cabin_roof",
+        (spec["width"] * spec["glass_width"] * 0.90, roof_len, 0.045),
+        (0.0, (roof_y0 + roof_y1) * 0.5, cabin_top_z + 0.01),
+        collection,
+    )
+    assign(roof, mats["BodyPaint"])
+    parent_keep(roof, root)
+
+    windshield_base = cabin_profile[-1]
+    windshield_top = cabin_profile[-2]
+    rear_base = cabin_profile[0]
+    rear_top = cabin_profile[1]
+    a_len = hypot(windshield_top[0] - windshield_base[0], windshield_top[1] - windshield_base[1])
+    a_rot = math.atan2(windshield_top[1] - windshield_base[1], windshield_top[0] - windshield_base[0])
+    c_len = hypot(rear_top[0] - rear_base[0], rear_top[1] - rear_base[1])
+    c_rot = math.atan2(rear_top[1] - rear_base[1], rear_top[0] - rear_base[0])
+    glass_x = half_w * spec["glass_width"] * 0.94
+    for side in (-1.0, 1.0):
+        pillar_a = create_box(
+            f"pillar_a_skin_{'L' if side < 0 else 'R'}",
+            (0.05, a_len + 0.04, 0.055),
+            (
+                side * glass_x,
+                (windshield_base[0] + windshield_top[0]) * 0.5,
+                (windshield_base[1] + windshield_top[1]) * 0.5,
+            ),
+            collection,
+            rotation=(a_rot, 0.0, side * -0.08),
+        )
+        assign(pillar_a, mats["Trim"])
+        parent_keep(pillar_a, root)
+        pillar_c = create_box(
+            f"pillar_c_skin_{'L' if side < 0 else 'R'}",
+            (0.055, c_len + 0.04, 0.06),
+            (
+                side * glass_x * 0.96,
+                (rear_base[0] + rear_top[0]) * 0.5,
+                (rear_base[1] + rear_top[1]) * 0.5,
+            ),
+            collection,
+            rotation=(c_rot, 0.0, 0.0),
+        )
+        assign(pillar_c, mats["Trim"])
+        parent_keep(pillar_c, root)
+
     for side in (-1.0, 1.0):
         handle = create_box(
-            f"door_handle_{'L' if side < 0 else 'R'}", (0.10, 0.20, 0.035),
-            (side * (half_w + 0.012), -0.28, ride + 0.66), collection
+            f"door_handle_{'L' if side < 0 else 'R'}",
+            (0.045, 0.16, 0.028),
+            (side * (half_w + 0.01), -0.22, ride + 0.68),
+            collection,
         )
         assign(handle, mats["Chrome"])
         parent_keep(handle, root)
 
-        vent = create_box(
-            f"side_vent_{'L' if side < 0 else 'R'}", (0.025, 0.30, 0.12),
-            (side * (half_w + 0.008), 0.95, ride + 0.44), collection
+        for slat, offset in enumerate((-0.08, 0.0, 0.08)):
+            vent = create_box(
+                f"side_vent_{'L' if side < 0 else 'R'}_{slat}",
+                (0.02, 0.22, 0.018),
+                (side * (half_w + 0.01), 0.92 + offset * 0.2, ride + 0.46 + offset),
+                collection,
+            )
+            assign(vent, mats["Dark"])
+            parent_keep(vent, root)
+
+        belt = create_box(
+            f"beltline_{'L' if side < 0 else 'R'}",
+            (0.012, spec["length"] * 0.42, 0.016),
+            (side * (half_w * 0.98), 0.05, ride + 0.78),
+            collection,
         )
-        assign(vent, mats["Dark"])
-        parent_keep(vent, root)
+        assign(belt, mats["Dark"])
+        parent_keep(belt, root)
+
+        shut = create_box(
+            f"door_shut_{'L' if side < 0 else 'R'}",
+            (0.008, 0.012, 0.42),
+            (side * (half_w * 0.99), 0.18, ride + 0.52),
+            collection,
+        )
+        assign(shut, mats["Dark"])
+        parent_keep(shut, root)
 
     build_interior(spec, mats, collection, root, cabin_profile, half_w)
 
-    front_y = max(y for y, _ in body_profile) + 0.02
-    rear_y = min(y for y, _ in body_profile) - 0.02
-    front_bumper = create_box("front_bumper", (spec["width"] * 0.92, 0.16, 0.18), (0.0, front_y, ride + 0.28), collection)
-    rear_bumper = create_box("rear_bumper", (spec["width"] * 0.92, 0.14, 0.16), (0.0, rear_y, ride + 0.28), collection)
-    assign(front_bumper, mats["Trim"])
-    assign(rear_bumper, mats["Trim"])
+    front_y = max(y for y, _ in body_profile) + 0.01
+    rear_y = min(y for y, _ in body_profile) - 0.01
+    front_bumper = create_box(
+        "front_bumper",
+        (spec["width"] * 0.90, 0.18, 0.14),
+        (0.0, front_y + 0.01, ride + 0.26),
+        collection,
+    )
+    rear_bumper = create_box(
+        "rear_bumper",
+        (spec["width"] * 0.90, 0.16, 0.13),
+        (0.0, rear_y - 0.01, ride + 0.26),
+        collection,
+    )
+    assign(front_bumper, mats["BodyPaint"])
+    assign(rear_bumper, mats["BodyPaint"])
     parent_keep(front_bumper, root)
     parent_keep(rear_bumper, root)
 
-    splitter = create_box("front_splitter", (spec["width"] * 0.9, 0.25, 0.055), (0.0, front_y + 0.1, ride + 0.13), collection)
-    diffuser = create_box("rear_diffuser", (spec["width"] * 0.82, 0.22, 0.07), (0.0, rear_y - 0.08, ride + 0.15), collection)
+    splitter = create_box(
+        "front_splitter",
+        (spec["width"] * 0.86, 0.16, 0.035),
+        (0.0, front_y + 0.08, ride + 0.12),
+        collection,
+    )
+    diffuser = create_box(
+        "rear_diffuser",
+        (spec["width"] * 0.78, 0.14, 0.045),
+        (0.0, rear_y - 0.06, ride + 0.13),
+        collection,
+    )
     assign(splitter, mats["Dark"])
     assign(diffuser, mats["Dark"])
     parent_keep(splitter, root)
     parent_keep(diffuser, root)
+    for fin in range(5):
+        x = (fin - 2) * spec["width"] * 0.13
+        blade = create_box(
+            f"diffuser_fin_{fin}",
+            (0.016, 0.12, 0.07),
+            (x, rear_y - 0.08, ride + 0.16),
+            collection,
+        )
+        assign(blade, mats["Dark"])
+        parent_keep(blade, root)
 
     if spec["grille"] == "oval":
         grille = create_cylinder(
@@ -1158,98 +1384,225 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
         assign(grille, mats["Dark"])
         parent_keep(grille, root)
 
-    light_z = ride + 0.55
+    light_z = ride + 0.54
     if spec["headlights"] == "round":
-        for side, sx in ((-1.0, -0.55), (1.0, 0.55)):
-            for j, ox in enumerate((-0.12, 0.12)):
+        for side, sx in ((-1.0, -0.52), (1.0, 0.52)):
+            for j, ox in enumerate((-0.11, 0.11)):
+                housing = create_sphere(
+                    f"head_housing_{'L' if side < 0 else 'R'}_{j}",
+                    0.095,
+                    (sx + ox * side, front_y - 0.02, light_z + 0.06),
+                    collection,
+                    segments=16,
+                    rings=10,
+                )
+                assign(housing, mats["Dark"])
+                parent_keep(housing, root)
                 lamp = create_sphere(
-                    f"headlight_{'L' if side < 0 else 'R'}_{j}", 0.09,
-                    (sx + ox * side, front_y + 0.01, light_z + 0.08), collection
+                    f"headlight_{'L' if side < 0 else 'R'}_{j}",
+                    0.072,
+                    (sx + ox * side, front_y + 0.02, light_z + 0.06),
+                    collection,
+                    segments=16,
+                    rings=10,
                 )
                 assign(lamp, mats["LightHead"])
                 smooth(lamp)
                 parent_keep(lamp, root)
+                lens = create_sphere(
+                    f"head_lens_{'L' if side < 0 else 'R'}_{j}",
+                    0.08,
+                    (sx + ox * side, front_y + 0.035, light_z + 0.06),
+                    collection,
+                    segments=14,
+                    rings=8,
+                )
+                assign(lens, mats["LightLens"])
+                parent_keep(lens, root)
             ind = create_sphere(
-                f"indicator_{'L' if side < 0 else 'R'}", 0.06,
-                (sx * 1.15, front_y + 0.01, light_z - 0.08), collection, segments=10, rings=6
+                f"indicator_{'L' if side < 0 else 'R'}",
+                0.045,
+                (sx * 1.22, front_y + 0.01, light_z - 0.10),
+                collection,
+                segments=10,
+                rings=6,
             )
             assign(ind, mats["Indicator"])
             parent_keep(ind, root)
+            socket = empty(f"head_socket_{'L' if side < 0 else 'R'}", (sx, front_y + 0.04, light_z + 0.06), collection)
+            parent_keep(socket, root)
     elif spec["headlights"] == "quad":
-        for side, sx in ((-1.0, -0.52), (1.0, 0.52)):
-            lamp = create_box(
-                f"headlight_{'L' if side < 0 else 'R'}", (0.42, 0.05, 0.14),
-                (sx, front_y + 0.01, light_z + 0.05), collection
+        for side, sx in ((-1.0, -0.50), (1.0, 0.50)):
+            housing = create_box(
+                f"head_housing_{'L' if side < 0 else 'R'}",
+                (0.40, 0.06, 0.16),
+                (sx, front_y - 0.01, light_z + 0.04),
+                collection,
+            )
+            assign(housing, mats["Dark"])
+            parent_keep(housing, root)
+            lamp = add_lamp_glass(
+                f"headlight_{'L' if side < 0 else 'R'}",
+                (0.34, 0.03, 0.10),
+                (sx, front_y + 0.03, light_z + 0.05),
+                collection,
             )
             assign(lamp, mats["LightHead"])
             parent_keep(lamp, root)
-            fog = create_sphere(f"fog_{'L' if side < 0 else 'R'}", 0.08, (sx, front_y + 0.02, light_z - 0.14), collection)
+            lens = add_lamp_glass(
+                f"head_lens_{'L' if side < 0 else 'R'}",
+                (0.38, 0.02, 0.13),
+                (sx, front_y + 0.05, light_z + 0.05),
+                collection,
+            )
+            assign(lens, mats["LightLens"])
+            parent_keep(lens, root)
+            fog = create_sphere(
+                f"fog_{'L' if side < 0 else 'R'}",
+                0.055,
+                (sx, front_y + 0.03, light_z - 0.14),
+                collection,
+            )
             assign(fog, mats["LightHead"])
             parent_keep(fog, root)
+            socket = empty(f"head_socket_{'L' if side < 0 else 'R'}", (sx, front_y + 0.06, light_z + 0.05), collection)
+            parent_keep(socket, root)
     elif spec["headlights"] == "pop":
-        for side, sx in ((-1.0, -0.48), (1.0, 0.48)):
+        for side, sx in ((-1.0, -0.46), (1.0, 0.46)):
             housing = create_box(
                 f"head_housing_{'L' if side < 0 else 'R'}",
-                (0.38, 0.36, 0.10),
-                (sx, front_y - 0.25, ride + 0.62),
+                (0.36, 0.28, 0.08),
+                (sx, front_y - 0.18, ride + 0.62),
                 collection,
-                rotation=(-0.18, 0.0, 0.0),
+                rotation=(-0.16, 0.0, 0.0),
             )
             assign(housing, mats["BodyPaint"])
             parent_keep(housing, root)
-            lamp = create_box(
+            lamp = add_lamp_glass(
                 f"headlight_{'L' if side < 0 else 'R'}",
-                (0.32, 0.04, 0.06),
-                (sx, front_y - 0.08, ride + 0.64),
+                (0.28, 0.03, 0.05),
+                (sx, front_y - 0.04, ride + 0.64),
                 collection,
-                rotation=(-0.18, 0.0, 0.0),
+                rotation=(-0.16, 0.0, 0.0),
             )
             assign(lamp, mats["LightHead"])
             parent_keep(lamp, root)
+            lens = add_lamp_glass(
+                f"head_lens_{'L' if side < 0 else 'R'}",
+                (0.30, 0.018, 0.055),
+                (sx, front_y - 0.02, ride + 0.645),
+                collection,
+                rotation=(-0.16, 0.0, 0.0),
+            )
+            assign(lens, mats["LightLens"])
+            parent_keep(lens, root)
+            socket = empty(f"head_socket_{'L' if side < 0 else 'R'}", (sx, front_y - 0.02, ride + 0.64), collection)
+            parent_keep(socket, root)
     else:
-        for side, sx in ((-1.0, -0.52), (1.0, 0.52)):
-            lamp = create_box(
-                f"headlight_{'L' if side < 0 else 'R'}", (0.40, 0.05, 0.12),
-                (sx, front_y + 0.01, light_z), collection
+        for side, sx in ((-1.0, -0.50), (1.0, 0.50)):
+            housing = create_box(
+                f"head_housing_{'L' if side < 0 else 'R'}",
+                (0.38, 0.07, 0.13),
+                (sx, front_y - 0.01, light_z),
+                collection,
+            )
+            assign(housing, mats["Dark"])
+            parent_keep(housing, root)
+            lamp = add_lamp_glass(
+                f"headlight_{'L' if side < 0 else 'R'}",
+                (0.30, 0.03, 0.08),
+                (sx, front_y + 0.03, light_z + 0.01),
+                collection,
             )
             assign(lamp, mats["LightHead"])
             parent_keep(lamp, root)
+            lens = add_lamp_glass(
+                f"head_lens_{'L' if side < 0 else 'R'}",
+                (0.34, 0.02, 0.10),
+                (sx, front_y + 0.05, light_z + 0.01),
+                collection,
+            )
+            assign(lens, mats["LightLens"])
+            parent_keep(lens, root)
+            drl = create_box(
+                f"drl_{'L' if side < 0 else 'R'}",
+                (0.30, 0.012, 0.012),
+                (sx, front_y + 0.04, light_z + 0.07),
+                collection,
+            )
+            assign(drl, mats["LightHead"])
+            parent_keep(drl, root)
             ind = create_box(
-                f"indicator_{'L' if side < 0 else 'R'}", (0.12, 0.04, 0.08),
-                (sx * 1.28, front_y + 0.01, light_z - 0.02), collection
+                f"indicator_{'L' if side < 0 else 'R'}",
+                (0.08, 0.03, 0.04),
+                (sx * 1.32, front_y + 0.02, light_z - 0.04),
+                collection,
             )
             assign(ind, mats["Indicator"])
             parent_keep(ind, root)
+            socket = empty(f"head_socket_{'L' if side < 0 else 'R'}", (sx, front_y + 0.06, light_z + 0.01), collection)
+            parent_keep(socket, root)
 
     if spec["class"] == "turbo_hatch":
-        for side, sx in ((-1.0, -0.62), (1.0, 0.62)):
+        for side, sx in ((-1.0, -0.60), (1.0, 0.60)):
+            housing = create_box(
+                f"tail_housing_{'L' if side < 0 else 'R'}",
+                (0.20, 0.06, 0.34),
+                (sx, rear_y + 0.01, ride + 0.72),
+                collection,
+            )
+            assign(housing, mats["Dark"])
+            parent_keep(housing, root)
             lamp = create_box(
-                f"brake_light_{'L' if side < 0 else 'R'}", (0.18, 0.05, 0.32),
-                (sx, rear_y - 0.01, ride + 0.72), collection
+                f"brake_light_{'L' if side < 0 else 'R'}",
+                (0.16, 0.03, 0.28),
+                (sx, rear_y - 0.02, ride + 0.72),
+                collection,
             )
             assign(lamp, mats["LightTail"])
             parent_keep(lamp, root)
     elif spec["class"] == "grand_tourer":
-        for side, sx in ((-1.0, -0.58), (1.0, 0.58)):
+        for side, sx in ((-1.0, -0.56), (1.0, 0.56)):
             lamp = create_sphere(
-                f"brake_light_{'L' if side < 0 else 'R'}", 0.14,
-                (sx, rear_y - 0.01, ride + 0.58), collection
+                f"brake_light_{'L' if side < 0 else 'R'}",
+                0.12,
+                (sx, rear_y - 0.02, ride + 0.58),
+                collection,
             )
-            lamp.scale = (1.0, 0.4, 0.7)
+            lamp.scale = (1.0, 0.38, 0.72)
             apply_transform(lamp)
             assign(lamp, mats["LightTail"])
             parent_keep(lamp, root)
-        chrome = create_box("rear_chrome", (0.7, 0.03, 0.04), (0.0, rear_y - 0.02, ride + 0.72), collection)
+        chrome = create_box("rear_chrome", (0.72, 0.025, 0.035), (0.0, rear_y - 0.02, ride + 0.72), collection)
         assign(chrome, mats["Chrome"])
         parent_keep(chrome, root)
     else:
-        for side, sx in ((-1.0, -0.55), (1.0, 0.55)):
+        for side, sx in ((-1.0, -0.52), (1.0, 0.52)):
+            housing = create_box(
+                f"tail_housing_{'L' if side < 0 else 'R'}",
+                (0.40, 0.06, 0.13),
+                (sx, rear_y + 0.01, ride + 0.58),
+                collection,
+            )
+            assign(housing, mats["Dark"])
+            parent_keep(housing, root)
             lamp = create_box(
-                f"brake_light_{'L' if side < 0 else 'R'}", (0.42, 0.05, 0.12),
-                (sx, rear_y - 0.01, ride + 0.58), collection
+                f"brake_light_{'L' if side < 0 else 'R'}",
+                (0.34, 0.03, 0.09),
+                (sx, rear_y - 0.02, ride + 0.58),
+                collection,
             )
             assign(lamp, mats["LightTail"])
             parent_keep(lamp, root)
+
+    third = create_box(
+        "brake_light_center",
+        (0.42, 0.02, 0.03),
+        (0.0, cabin_profile[1][0] - 0.02, cabin_top_z - 0.02),
+        collection,
+    )
+    assign(third, mats["LightTail"])
+    parent_keep(third, root)
 
     if spec["hood_scoop"]:
         scoop = create_box(
@@ -1274,21 +1627,66 @@ def build_vehicle(vehicle_id: str, spec: dict) -> Path:
             assign(stand, mats["Trim"])
             parent_keep(stand, root)
 
-    for side, sx in ((-1.0, -half_w - 0.06), (1.0, half_w + 0.06)):
+    for side, sx in ((-1.0, -half_w - 0.02), (1.0, half_w + 0.02)):
+        stalk = create_box(
+            f"mirror_stalk_{'L' if side < 0 else 'R'}",
+            (0.08, 0.04, 0.03),
+            (sx, 0.42, ride + 0.94),
+            collection,
+        )
+        assign(stalk, mats["Trim"])
+        parent_keep(stalk, root)
         mirror = create_box(
-            f"mirror_{'L' if side < 0 else 'R'}", (0.14, 0.18, 0.08),
-            (sx, 0.35, ride + 0.95), collection
+            f"mirror_{'L' if side < 0 else 'R'}",
+            (0.12, 0.16, 0.07),
+            (sx + side * 0.08, 0.40, ride + 0.96),
+            collection,
+            rotation=(0.0, 0.0, side * 0.22),
         )
         assign(mirror, mats["BodyPaint"])
         parent_keep(mirror, root)
+        glass_m = create_box(
+            f"mirror_face_{'L' if side < 0 else 'R'}",
+            (0.01, 0.12, 0.05),
+            (sx + side * 0.14, 0.40, ride + 0.96),
+            collection,
+            rotation=(0.0, 0.0, side * 0.22),
+        )
+        assign(glass_m, mats["Mirror"])
+        parent_keep(glass_m, root)
+
+    plate = create_box(
+        "plate_rear",
+        (0.32, 0.02, 0.10),
+        (0.0, rear_y - 0.04, ride + 0.38),
+        collection,
+    )
+    assign(plate, mats["Trim"])
+    parent_keep(plate, root)
 
     for i, x in enumerate(spec["exhausts"]):
         ex = create_cylinder(
-            f"exhaust_{i}", 0.055, 0.18, (x, rear_y - 0.08, ride + 0.22), collection,
-            rotation=(math.pi / 2, 0, 0), segments=12
+            f"exhaust_{i}",
+            0.048,
+            0.16,
+            (x, rear_y - 0.10, ride + 0.20),
+            collection,
+            rotation=(math.pi / 2, 0, 0),
+            segments=14,
         )
         assign(ex, mats["Chrome"])
         parent_keep(ex, root)
+        inner = create_cylinder(
+            f"exhaust_inner_{i}",
+            0.032,
+            0.10,
+            (x, rear_y - 0.16, ride + 0.20),
+            collection,
+            rotation=(math.pi / 2, 0, 0),
+            segments=12,
+        )
+        assign(inner, mats["Dark"])
+        parent_keep(inner, root)
 
     under = create_box(
         "undertray", (spec["width"] * 0.85, spec["length"] * 0.85, 0.06),

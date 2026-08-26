@@ -48,6 +48,7 @@ Optional: `OUTPUT_DIR=path/to/dir` overrides the output folder.
 | `cam_hood`, `cam_dash` | Hood / dash camera sockets |
 | `cam_*_look` | Matching look targets |
 | `interior_light` | Cabin fill light anchor |
-| `LightHead`, `Chrome`, `Rubber`, `Rim`, `Trim` | Detail materials |
+| `LightHead`, `LightLens`, `Chrome`, `Rubber`, `Rim`, `Trim` | Detail materials |
+| `head_socket_L`, `head_socket_R` | Headlight spotlight sockets |
 
 Axes: **+Y up**, **+Z forward**, ground at **y = 0**, origin near chassis center.

@@ -64,7 +64,12 @@ export class PlayerVehicle {
 
   setColor(color: string): void {
     const paints = this.model.userData.bodyMaterials ?? [this.model.userData.bodyMaterial];
-    for (const material of paints) material.color.set(color);
+    for (const material of paints) {
+      material.color.set(color);
+      if (material instanceof THREE.MeshPhysicalMaterial) {
+        material.sheenColor.set(color).multiplyScalar(1.12);
+      }
+    }
   }
 
   prePhysics(dt: number, input: InputState, enabled: boolean): void {
@@ -122,12 +127,12 @@ export class PlayerVehicle {
       wheel.rotation.x = this.wheelSpin;
       if (index === 0 || index === 1) wheel.rotation.y = this.steeringVisual;
     });
-    const brakeIntensity = this.lastInput.brake > 0.05 ? 0xff7a87 : 0xff263f;
+    const brakeIntensity = this.lastInput.brake > 0.05 ? 0xff8a96 : 0xff2a42;
     this.model.userData.brakeLights.forEach((light) => {
       const material = light.material as THREE.MeshStandardMaterial;
       material.color.setHex(brakeIntensity);
-      material.emissive.setHex(this.lastInput.brake > 0.05 ? 0xff1f3d : 0x8a0718);
-      material.emissiveIntensity = this.lastInput.brake > 0.05 ? 2.6 : 1.5;
+      material.emissive.setHex(this.lastInput.brake > 0.05 ? 0xff2448 : 0xa0081c);
+      material.emissiveIntensity = this.lastInput.brake > 0.05 ? 3.6 : 2.0;
     });
     const wheel = this.model.userData.steeringWheel;
     if (wheel) {

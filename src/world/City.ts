@@ -160,9 +160,9 @@ export class City {
         scene.background = new THREE.Color(0x070b15);
         fog.color.set(0x070b15);
         fog.density = 0.00215;
-        this.sun.color.set(0x7894c8);
-        this.sun.intensity = 0.32;
-        this.hemisphere.intensity = 0.68;
+        this.sun.color.set(0x8aa4d4);
+        this.sun.intensity = 0.55;
+        this.hemisphere.intensity = 0.92;
         this.buildingMaterial.emissiveIntensity = 0.8;
         this.roadMaterial.roughness = 0.7;
         break;
