@@ -99,7 +99,7 @@ try {
     await page.goto(`${origin}/?debug=1`, { waitUntil: 'networkidle' });
     await page.locator('[data-action="continue"]').click({ force: true });
     await page.locator('#hud').waitFor({ state: 'visible' });
-    for (let cycle = 0; cycle < 5; cycle += 1) await page.keyboard.press('c');
+    for (let cycle = 0; cycle < 4; cycle += 1) await page.keyboard.press('c');
     await page.waitForFunction(() => document.querySelector('#camera-label')?.textContent === 'ORBIT');
     await page.waitForTimeout(2600);
     await page.screenshot({ path: join(artifactsPath, `vehicle-${vehicle}.png`) });

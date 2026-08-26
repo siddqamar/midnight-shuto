@@ -2,7 +2,7 @@ import type { Vector3 } from 'three';
 
 export type Weather = 'sunny' | 'sunset' | 'night' | 'rain';
 export type Difficulty = 'easy' | 'medium' | 'hard';
-export type CameraMode = 'CHASE' | 'FAR' | 'HOOD' | 'DASH' | 'COCKPIT' | 'ORBIT' | 'FREE';
+export type CameraMode = 'CHASE' | 'FAR' | 'HOOD' | 'DASH' | 'ORBIT' | 'FREE';
 export type MissionKind = 'sprint' | 'checkpoint' | 'drift';
 export type VehicleId = 'kaze' | 'michi' | 'raiden' | 'shogun';
 

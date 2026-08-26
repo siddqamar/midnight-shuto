@@ -874,7 +874,7 @@ def build_interior(
     assign(rearview_glass, mats["Mirror"])
     parent_keep(rearview_glass, root)
 
-    # Inner windshield pane, slightly inside the greenhouse so cockpit camera sees glass.
+    # Inner windshield pane, slightly inside the greenhouse so dash view sees glass.
     wind_y = (windshield_base[0] + windshield_top[0]) * 0.5 - 0.04
     wind_z = (windshield_base[1] + windshield_top[1]) * 0.5
     wind_h = hypot(a_dy, a_dz) * 0.92
@@ -912,13 +912,6 @@ def build_interior(
         parent_keep(sleeve, root)
 
     # Camera sockets in Blender space: X right, Y forward, Z up.
-    eye_y = seat_y + 0.08
-    eye_z = min(floor_z + 0.64, cabin_top_z - 0.2)
-    cockpit = empty("cam_cockpit", (driver_x * 0.78, eye_y, eye_z), collection)
-    parent_keep(cockpit, root)
-    cockpit_look = empty("cam_cockpit_look", (driver_x * 0.12, cabin_front_y + 6.0, belt_z - 0.08), collection)
-    parent_keep(cockpit_look, root)
-
     dash_cam = empty("cam_dash", (0.0, dash_y - 0.08, dash_z + 0.22), collection)
     parent_keep(dash_cam, root)
     dash_look = empty("cam_dash_look", (0.0, cabin_front_y + 7.5, belt_z - 0.18), collection)

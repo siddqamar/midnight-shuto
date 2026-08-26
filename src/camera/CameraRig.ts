@@ -3,20 +3,18 @@ import * as THREE from 'three';
 import type { CameraMode, VehicleTelemetry } from '../core/types';
 import { clamp, damp, speedEffectIntensity } from '../utils/math';
 
-const MODES: CameraMode[] = ['CHASE', 'FAR', 'HOOD', 'DASH', 'COCKPIT', 'ORBIT', 'FREE'];
+const MODES: CameraMode[] = ['CHASE', 'FAR', 'HOOD', 'DASH', 'ORBIT', 'FREE'];
 
 const offsets: Record<Exclude<CameraMode, 'ORBIT' | 'FREE'>, THREE.Vector3> = {
   CHASE: new THREE.Vector3(0, 3.25, -7.8),
   FAR: new THREE.Vector3(0, 6.1, -13.8),
   HOOD: new THREE.Vector3(0, 1.12, 1.28),
-  DASH: new THREE.Vector3(0, 1.18, 0.22),
-  COCKPIT: new THREE.Vector3(0.36, 1.16, -0.12)
+  DASH: new THREE.Vector3(0, 1.18, 0.22)
 };
 
 const SOCKETS: Partial<Record<CameraMode, { camera: string; look: string }>> = {
   HOOD: { camera: 'cam_hood', look: 'cam_hood_look' },
-  DASH: { camera: 'cam_dash', look: 'cam_dash_look' },
-  COCKPIT: { camera: 'cam_cockpit', look: 'cam_cockpit_look' }
+  DASH: { camera: 'cam_dash', look: 'cam_dash_look' }
 };
 
 export class CameraRig {
@@ -74,8 +72,8 @@ export class CameraRig {
     this.speedEffectLevel = speedEffectIntensity(telemetry.speedKph);
     this.scratchForward.set(0, 0, 1).applyQuaternion(this.target.quaternion);
     this.scratchRight.set(1, 0, 0).applyQuaternion(this.target.quaternion);
-    const mounted = mode === 'HOOD' || mode === 'DASH' || mode === 'COCKPIT';
-    const interior = mode === 'DASH' || mode === 'COCKPIT';
+    const mounted = mode === 'HOOD' || mode === 'DASH';
+    const interior = mode === 'DASH';
 
     const accel = clamp((telemetry.speedKph - this.lastSpeed) / Math.max(dt, 0.001) / 80, -1, 1);
     this.lastSpeed = telemetry.speedKph;
@@ -127,11 +125,9 @@ export class CameraRig {
 
     const targetFov = mode === 'CHASE' || mode === 'FAR'
       ? 62 + Math.min(2, telemetry.speedKph * 0.025) + this.speedEffectLevel * 12
-      : mode === 'COCKPIT'
-        ? 62 + this.speedEffectLevel * 3
-        : mode === 'DASH'
-          ? 66 + this.speedEffectLevel * 3.5
-          : 70 + this.speedEffectLevel * 4;
+      : mode === 'DASH'
+        ? 66 + this.speedEffectLevel * 3.5
+        : 70 + this.speedEffectLevel * 4;
     this.camera.fov = damp(this.camera.fov, targetFov, 4, dt);
     this.camera.near = interior ? 0.04 : 0.08;
     this.camera.updateProjectionMatrix();

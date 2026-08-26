@@ -45,7 +45,7 @@ Optional: `OUTPUT_DIR=path/to/dir` overrides the output folder.
 | `wheel_fl`, `wheel_fr`, `wheel_rl`, `wheel_rr` | Wheel pivots (empties) |
 | `steering_wheel` | Steering pivot (runtime yaw) |
 | `cluster_screen` | Instrument cluster quad (canvas texture) |
-| `cam_hood`, `cam_dash`, `cam_cockpit` | Interior / hood camera sockets |
+| `cam_hood`, `cam_dash` | Hood / dash camera sockets |
 | `cam_*_look` | Matching look targets |
 | `interior_light` | Cabin fill light anchor |
 | `LightHead`, `Chrome`, `Rubber`, `Rim`, `Trim` | Detail materials |

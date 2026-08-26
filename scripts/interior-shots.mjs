@@ -8,8 +8,7 @@ const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const origin = process.env.SHOT_ORIGIN ?? 'http://127.0.0.1:5188';
 const modes = [
   { presses: 2, name: 'hood' },
-  { presses: 3, name: 'dash' },
-  { presses: 4, name: 'cockpit' }
+  { presses: 3, name: 'dash' }
 ];
 const vehicles = (process.env.SHOT_VEHICLE ?? 'kaze,michi,raiden,shogun').split(',');
 

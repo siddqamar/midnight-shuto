@@ -138,7 +138,7 @@ export class PlayerVehicle {
   }
 
   setCameraMode(mode: CameraMode): void {
-    const interior = mode === 'DASH' || mode === 'COCKPIT';
+    const interior = mode === 'DASH';
     for (const glass of this.model.userData.cabinGlass) glass.visible = !interior;
     const light = this.model.userData.interiorLight;
     if (light) light.intensity = interior ? 1.8 : 0.7;
