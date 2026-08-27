@@ -245,9 +245,11 @@ export class Game {
           drifting: telemetry.drifting
         },
         feedback: {
+          cameraMode: this.camera.mode,
           cameraFov: this.camera.camera.fov,
           cameraIntensity: this.camera.feedbackIntensity,
-          audioIntensity: this.audio.feedbackIntensity
+          audioIntensity: this.audio.feedbackIntensity,
+          cameraPosition: { ...this.camera.camera.position }
         },
         body: {
           type: this.vehicle.body.type,

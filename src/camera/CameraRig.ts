@@ -21,6 +21,7 @@ export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
   private modeIndex = 0;
   private targetPosition = new THREE.Vector3();
+  private smoothedPosition = new THREE.Vector3();
   private lookTarget = new THREE.Vector3();
   private orbitAngle = 0;
   private freeYaw = 0;
@@ -37,12 +38,14 @@ export class CameraRig {
   private scratchLook = new THREE.Vector3();
   private socketPosition = new THREE.Vector3();
   private socketLook = new THREE.Vector3();
+  private snapNextUpdate = true;
 
   private rayResult = new CANNON.RaycastResult();
 
   constructor(private target: THREE.Object3D, private physics: CANNON.World) {
     this.camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.05, 1500);
     this.camera.position.set(0, 4, -9);
+    this.smoothedPosition.copy(this.camera.position);
     window.addEventListener('pointermove', (event) => {
       if (this.mode !== 'FREE' || document.pointerLockElement === null) return;
       this.freeYaw -= event.movementX * 0.002;
@@ -60,6 +63,7 @@ export class CameraRig {
 
   cycle(): CameraMode {
     this.modeIndex = (this.modeIndex + 1) % MODES.length;
+    this.snapNextUpdate = true;
     if (this.mode === 'FREE') {
       this.freeYaw = this.target.rotation.y;
       this.freePitch = -0.12;
@@ -109,19 +113,25 @@ export class CameraRig {
     }
 
     const positionLambda = interior ? 42 : mode === 'HOOD' ? 28 : 7.5;
-    this.camera.position.lerp(this.targetPosition, 1 - Math.exp(-positionLambda * dt));
-    if (mode !== 'ORBIT' && mode !== 'FREE' && !this.reducedMotion) {
+    if (this.snapNextUpdate) this.smoothedPosition.copy(this.targetPosition);
+    else this.smoothedPosition.lerp(this.targetPosition, 1 - Math.exp(-positionLambda * dt));
+    this.camera.position.copy(this.smoothedPosition);
+    if ((mode === 'CHASE' || mode === 'FAR') && !this.reducedMotion) {
       this.shakeTime += dt * (8 + telemetry.rpm / 900 + this.speedEffectLevel * 9);
-      const idleVibe = interior ? 0.0018 + telemetry.rpm * 0.0000007 : 0;
-      const amplitude = idleVibe + this.speedEffectLevel * (mode === 'CHASE' || mode === 'FAR' ? 0.045 : 0.007);
+      const amplitude = this.speedEffectLevel * 0.045;
       this.camera.position.addScaledVector(this.scratchRight, Math.sin(this.shakeTime * 1.7) * amplitude);
       this.camera.position.addScaledVector(this.worldUp, Math.cos(this.shakeTime * 2.3) * amplitude * 0.55);
     }
-    const currentDirection = this.scratchLook.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    const desiredDirection = this.lookTarget.clone().sub(this.camera.position).normalize();
-    const lookLambda = interior ? 16 : 10;
-    currentDirection.lerp(desiredDirection, 1 - Math.exp(-lookLambda * dt));
-    this.camera.lookAt(this.camera.position.clone().add(currentDirection));
+    if (this.snapNextUpdate) {
+      this.camera.lookAt(this.lookTarget);
+      this.snapNextUpdate = false;
+    } else {
+      const currentDirection = this.scratchLook.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+      const desiredDirection = this.lookTarget.clone().sub(this.camera.position).normalize();
+      const lookLambda = interior ? 16 : 10;
+      currentDirection.lerp(desiredDirection, 1 - Math.exp(-lookLambda * dt));
+      this.camera.lookAt(this.camera.position.clone().add(currentDirection));
+    }
 
     const targetFov = mode === 'CHASE' || mode === 'FAR'
       ? 62 + Math.min(2, telemetry.speedKph * 0.025) + this.speedEffectLevel * 12
