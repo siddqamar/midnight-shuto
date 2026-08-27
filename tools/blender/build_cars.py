@@ -1006,10 +1006,13 @@ def build_wheel(
     axle_rot = (0.0, math.pi / 2, 0.0)
     spoke_count = 5
 
+    def attach(component: bpy.types.Object) -> None:
+        parent_local(component, root, tuple(component.location), tuple(component.rotation_euler))
+
     tire = create_cylinder(f"{name}_tire", radius, width, (0, 0, 0), collection, rotation=axle_rot, segments=40)
     assign(tire, mats["Rubber"])
     smooth(tire, 35.0)
-    parent_keep(tire, root)
+    attach(tire)
 
     for groove, scale in enumerate((0.72, 0.0, -0.72)):
         tread = create_cylinder(
@@ -1022,21 +1025,21 @@ def build_wheel(
             segments=40,
         )
         assign(tread, mats["Dark"])
-        parent_keep(tread, root)
+        attach(tread)
 
     sidewall = create_cylinder(
         f"{name}_sidewall", radius * 0.86, width * 1.02, (0, 0, 0), collection, rotation=axle_rot, segments=36
     )
     assign(sidewall, mats["TireWall"])
     smooth(sidewall, 35.0)
-    parent_keep(sidewall, root)
+    attach(sidewall)
 
     barrel = create_cylinder(
         f"{name}_barrel", radius * 0.58, width * 0.72, (0, 0, 0), collection, rotation=axle_rot, segments=28
     )
     assign(barrel, mats["Rim"])
     smooth(barrel, 30.0)
-    parent_keep(barrel, root)
+    attach(barrel)
 
     lip = create_cylinder(
         f"{name}_lip",
@@ -1049,7 +1052,7 @@ def build_wheel(
     )
     assign(lip, mats["Chrome"])
     smooth(lip, 30.0)
-    parent_keep(lip, root)
+    attach(lip)
 
     disc = create_cylinder(
         f"{name}_disc",
@@ -1061,7 +1064,7 @@ def build_wheel(
         segments=24,
     )
     assign(disc, mats["Brake"])
-    parent_keep(disc, root)
+    attach(disc)
 
     hub = create_cylinder(
         f"{name}_hub",
@@ -1073,7 +1076,7 @@ def build_wheel(
         segments=14,
     )
     assign(hub, mats["Chrome"])
-    parent_keep(hub, root)
+    attach(hub)
 
     cap = create_cylinder(
         f"{name}_cap",
@@ -1085,7 +1088,7 @@ def build_wheel(
         segments=12,
     )
     assign(cap, mats["Accent"])
-    parent_keep(cap, root)
+    attach(cap)
 
     caliper = create_box(
         f"{name}_caliper",
@@ -1094,7 +1097,7 @@ def build_wheel(
         collection,
     )
     assign(caliper, mats["Caliper"])
-    parent_keep(caliper, root)
+    attach(caliper)
 
     for index in range(spoke_count):
         angle = (index / spoke_count) * math.tau
@@ -1106,7 +1109,7 @@ def build_wheel(
             rotation=(angle, 0.0, 0.0),
         )
         assign(spoke, mats["Rim"])
-        parent_keep(spoke, root)
+        attach(spoke)
         lug = create_cylinder(
             f"{name}_lug_{index}",
             radius * 0.028,
@@ -1117,7 +1120,7 @@ def build_wheel(
             segments=8,
         )
         assign(lug, mats["Chrome"])
-        parent_keep(lug, root)
+        attach(lug)
 
     return root
 

@@ -314,19 +314,21 @@ function collectWheels(root: THREE.Object3D): THREE.Group[] {
     const parent = node.parent;
     if (!parent) throw new Error(`Vehicle wheel "${name}" has no parent.`);
 
-    // Some exports place the wheel mesh at the axle but put the named node's
-    // origin back near the vehicle center. Rotating that node makes the wheel
-    // orbit instead of spinning in place. Build a pivot at the rendered wheel
-    // bounds center and attach the imported node without changing its pose.
+    // Older exports preserve each wheel mesh's world position while parenting
+    // it to an axle socket, leaving the rendered wheel at the chassis origin.
+    // Move that subtree onto its authored socket before creating a spin pivot.
     root.updateMatrixWorld(true);
-    const bounds = new THREE.Box3().setFromObject(node);
-    const pivotPosition = bounds.getCenter(new THREE.Vector3());
-    parent.worldToLocal(pivotPosition);
+    const socketPosition = node.getWorldPosition(new THREE.Vector3());
+    const renderedPosition = new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3());
+    const localSocket = parent.worldToLocal(socketPosition.clone());
+    const localRendered = parent.worldToLocal(renderedPosition.clone());
+    node.position.add(localSocket.sub(localRendered));
+    root.updateMatrixWorld(true);
 
     const pivot = new THREE.Group();
     pivot.name = `${name}_runtime_pivot`;
     parent.add(pivot);
-    pivot.position.copy(pivotPosition);
+    pivot.position.copy(parent.worldToLocal(socketPosition));
     pivot.attach(node);
     wheels.push(pivot);
   }

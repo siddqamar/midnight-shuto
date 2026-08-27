@@ -261,6 +261,9 @@ export class Game {
           force: { ...this.vehicle.body.force },
           sleeping: this.vehicle.body.sleepState
         },
+        visual: {
+          wheels: this.vehicle.getWheelWorldPositions()
+        },
         contacts: this.physics.contacts
           .filter((contact) => contact.bi === this.vehicle.body || contact.bj === this.vehicle.body)
           .map((contact) => ({

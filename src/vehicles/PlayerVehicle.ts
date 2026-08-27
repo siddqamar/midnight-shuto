@@ -149,6 +149,13 @@ export class PlayerVehicle {
     if (light) light.intensity = interior ? 1.8 : 0.7;
   }
 
+  getWheelWorldPositions(): Array<{ x: number; y: number; z: number }> {
+    return this.model.userData.wheels.map((wheel) => {
+      const position = wheel.getWorldPosition(new THREE.Vector3());
+      return { x: position.x, y: position.y, z: position.z };
+    });
+  }
+
   getTelemetry(): VehicleTelemetry {
     const speedKph = Math.abs(this.speedForward) * 3.6;
     const gearNumber = speedKph < 3 ? 'N' : String(clamp(Math.ceil(speedKph / 38), 1, 6));
