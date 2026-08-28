@@ -11,6 +11,7 @@ import { TrafficSystem } from '../traffic/TrafficSystem';
 import { HUD } from '../ui/HUD';
 import { PlayerVehicle } from '../vehicles/PlayerVehicle';
 import { City } from '../world/City';
+import { CityEnvironment } from '../world/EnvironmentMap';
 
 type GameState = 'menu' | 'playing' | 'paused';
 
@@ -22,6 +23,7 @@ export class Game {
   private save = new SaveStore();
   private hud: HUD;
   private city: City;
+  private environment: CityEnvironment;
   private vehicle: PlayerVehicle;
   private camera: CameraRig;
   private traffic: TrafficSystem;
@@ -51,6 +53,9 @@ export class Game {
     viewport.appendChild(this.renderer.domElement);
 
     this.configurePhysics();
+    this.environment = new CityEnvironment(this.renderer, this.save.data.settings.weather);
+    this.scene.environment = this.environment.texture;
+    this.scene.environmentIntensity = this.environment.intensity;
     this.city = new City(this.scene, this.physics, this.save.data.settings.quality);
     this.city.setWeather(this.save.data.settings.weather, this.scene);
     const spec = this.selectedSpec;
@@ -206,6 +211,9 @@ export class Game {
   private setWeather(weather: Weather): void {
     this.save.data.settings.weather = weather;
     this.city.setWeather(weather, this.scene);
+    this.environment.setWeather(weather);
+    this.scene.environment = this.environment.texture;
+    this.scene.environmentIntensity = this.environment.intensity;
     this.save.save();
     this.hud.toast(`${weather.toUpperCase()} WEATHER`);
   }
@@ -237,9 +245,12 @@ export class Game {
           drifting: telemetry.drifting
         },
         feedback: {
+          cameraMode: this.camera.mode,
           cameraFov: this.camera.camera.fov,
           cameraIntensity: this.camera.feedbackIntensity,
-          audioIntensity: this.audio.feedbackIntensity
+          audioIntensity: this.audio.feedbackIntensity,
+          cameraPosition: { ...this.camera.camera.position },
+          mountedTrackingError: this.camera.mountedTrackingError
         },
         body: {
           type: this.vehicle.body.type,
@@ -250,6 +261,9 @@ export class Game {
           quaternion: { ...this.vehicle.body.quaternion },
           force: { ...this.vehicle.body.force },
           sleeping: this.vehicle.body.sleepState
+        },
+        visual: {
+          wheels: this.vehicle.getWheelWorldPositions()
         },
         contacts: this.physics.contacts
           .filter((contact) => contact.bi === this.vehicle.body || contact.bj === this.vehicle.body)
@@ -287,6 +301,7 @@ export class Game {
       countdown: 0
     };
     this.camera.update(dt, telemetry);
+    this.vehicle.setCameraMode(this.camera.mode);
     this.city.update(this.camera.camera.position, this.elapsed);
     if (this.state === 'playing') {
       this.hud.update(telemetry, missionState, this.camera.mode);

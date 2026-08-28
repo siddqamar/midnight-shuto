@@ -1,6 +1,6 @@
 import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
-import type { InputState, VehicleSpec, VehicleTelemetry } from '../core/types';
+import type { CameraMode, InputState, VehicleSpec, VehicleTelemetry } from '../core/types';
 import { clamp, damp } from '../utils/math';
 import { createCarModel, type CarModel } from './CarModel';
 
@@ -64,7 +64,12 @@ export class PlayerVehicle {
 
   setColor(color: string): void {
     const paints = this.model.userData.bodyMaterials ?? [this.model.userData.bodyMaterial];
-    for (const material of paints) material.color.set(color);
+    for (const material of paints) {
+      material.color.set(color);
+      if (material instanceof THREE.MeshPhysicalMaterial) {
+        material.sheenColor.set(color).multiplyScalar(1.12);
+      }
+    }
   }
 
   prePhysics(dt: number, input: InputState, enabled: boolean): void {
@@ -113,8 +118,10 @@ export class PlayerVehicle {
   }
 
   syncVisual(dt: number): void {
-    this.group.position.set(this.body.position.x, this.body.position.y - 0.42, this.body.position.z);
-    this.group.quaternion.set(this.body.quaternion.x, this.body.quaternion.y, this.body.quaternion.z, this.body.quaternion.w);
+    const position = this.body.interpolatedPosition;
+    const quaternion = this.body.interpolatedQuaternion;
+    this.group.position.set(position.x, position.y - 0.42, position.z);
+    this.group.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
     this.wheelSpin += this.speedForward * dt / 0.38;
     this.steeringVisual = damp(this.steeringVisual, this.lastInput.steering * 0.5, 10, dt);
     // Wheel order from GLB: fl, fr, rl, rr — front axles are indices 0 and 1.
@@ -122,12 +129,32 @@ export class PlayerVehicle {
       wheel.rotation.x = this.wheelSpin;
       if (index === 0 || index === 1) wheel.rotation.y = this.steeringVisual;
     });
-    const brakeIntensity = this.lastInput.brake > 0.05 ? 0xff7a87 : 0xff263f;
+    const brakeIntensity = this.lastInput.brake > 0.05 ? 0xff8a96 : 0xff2a42;
     this.model.userData.brakeLights.forEach((light) => {
       const material = light.material as THREE.MeshStandardMaterial;
       material.color.setHex(brakeIntensity);
-      material.emissive.setHex(this.lastInput.brake > 0.05 ? 0xff1f3d : 0x8a0718);
-      material.emissiveIntensity = this.lastInput.brake > 0.05 ? 2.6 : 1.5;
+      material.emissive.setHex(this.lastInput.brake > 0.05 ? 0xff2448 : 0xa0081c);
+      material.emissiveIntensity = this.lastInput.brake > 0.05 ? 3.6 : 2.0;
+    });
+    const wheel = this.model.userData.steeringWheel;
+    if (wheel) {
+      wheel.quaternion.copy(this.model.userData.steeringBase);
+      wheel.rotateOnAxis(new THREE.Vector3(0, 0, 1), this.steeringVisual * 2.6);
+    }
+    this.model.userData.cluster?.update(this.getTelemetry());
+  }
+
+  setCameraMode(mode: CameraMode): void {
+    const interior = mode === 'DASH';
+    for (const glass of this.model.userData.cabinGlass) glass.visible = !interior;
+    const light = this.model.userData.interiorLight;
+    if (light) light.intensity = interior ? 1.8 : 0.7;
+  }
+
+  getWheelWorldPositions(): Array<{ x: number; y: number; z: number }> {
+    return this.model.userData.wheels.map((wheel) => {
+      const position = wheel.getWorldPosition(new THREE.Vector3());
+      return { x: position.x, y: position.y, z: position.z };
     });
   }
 
@@ -142,7 +169,10 @@ export class PlayerVehicle {
       gear,
       slip: this.slip,
       drifting: this.slip > 0.22 && speedKph > 24,
-      position: this.group.position
+      position: this.group.position,
+      steering: this.lastInput.steering,
+      throttle: this.lastInput.throttle,
+      brake: this.lastInput.brake
     };
   }
 
@@ -151,6 +181,10 @@ export class PlayerVehicle {
     this.body.velocity.setZero();
     this.body.angularVelocity.setZero();
     this.body.quaternion.setFromEuler(0, yaw, 0);
+    this.body.previousPosition.copy(this.body.position);
+    this.body.interpolatedPosition.copy(this.body.position);
+    this.body.previousQuaternion.copy(this.body.quaternion);
+    this.body.interpolatedQuaternion.copy(this.body.quaternion);
     this.body.wakeUp();
   }
 

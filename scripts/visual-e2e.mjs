@@ -99,9 +99,17 @@ try {
     await page.goto(`${origin}/?debug=1`, { waitUntil: 'networkidle' });
     await page.locator('[data-action="continue"]').click({ force: true });
     await page.locator('#hud').waitFor({ state: 'visible' });
-    for (let cycle = 0; cycle < 5; cycle += 1) await page.keyboard.press('c');
+    for (let cycle = 0; cycle < 4; cycle += 1) await page.keyboard.press('c');
     await page.waitForFunction(() => document.querySelector('#camera-label')?.textContent === 'ORBIT');
     await page.waitForTimeout(2600);
+    const wheels = await page.evaluate(() => window.__shutoDebug?.().visual.wheels ?? []);
+    const wheelSpread = (axis) => {
+      const values = wheels.map((wheel) => wheel[axis]);
+      return Math.max(...values) - Math.min(...values);
+    };
+    if (wheels.length !== 4 || wheelSpread('x') < 1.2 || wheelSpread('z') < 2.2) {
+      throw new Error(`${vehicle} wheels are not distributed across both axles: ${JSON.stringify(wheels)}`);
+    }
     await page.screenshot({ path: join(artifactsPath, `vehicle-${vehicle}.png`) });
     await page.close();
   }

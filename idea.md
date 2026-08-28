@@ -145,9 +145,8 @@ Player can instantly switch between:
 2. Far chase camera
 3. Hood camera
 4. Dashboard camera
-5. First-person cockpit
-6. Cinematic orbit
-7. Free camera for screenshots
+5. Cinematic orbit
+6. Free camera for screenshots
 
 Camera transitions should be smooth.
 
