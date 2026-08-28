@@ -1,7 +1,7 @@
 import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
 import type { CameraMode, VehicleTelemetry } from '../core/types';
-import { clamp, damp, speedEffectIntensity } from '../utils/math';
+import { damp, speedEffectIntensity } from '../utils/math';
 
 const MODES: CameraMode[] = ['CHASE', 'FAR', 'HOOD', 'DASH', 'ORBIT', 'FREE'];
 
@@ -29,9 +29,6 @@ export class CameraRig {
   private shakeTime = 0;
   private speedEffectLevel = 0;
   private reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  private lastSpeed = 0;
-  private pitchSway = 0;
-  private lookSway = 0;
   private worldUp = new THREE.Vector3(0, 1, 0);
   private scratchForward = new THREE.Vector3();
   private scratchRight = new THREE.Vector3();
@@ -61,6 +58,11 @@ export class CameraRig {
     return this.speedEffectLevel;
   }
 
+  get mountedTrackingError(): number {
+    if (this.mode !== 'HOOD' && this.mode !== 'DASH') return 0;
+    return this.camera.position.distanceTo(this.targetPosition);
+  }
+
   cycle(): CameraMode {
     this.modeIndex = (this.modeIndex + 1) % MODES.length;
     this.snapNextUpdate = true;
@@ -78,11 +80,6 @@ export class CameraRig {
     this.scratchRight.set(1, 0, 0).applyQuaternion(this.target.quaternion);
     const mounted = mode === 'HOOD' || mode === 'DASH';
     const interior = mode === 'DASH';
-
-    const accel = clamp((telemetry.speedKph - this.lastSpeed) / Math.max(dt, 0.001) / 80, -1, 1);
-    this.lastSpeed = telemetry.speedKph;
-    this.pitchSway = damp(this.pitchSway, telemetry.throttle * 0.035 - telemetry.brake * 0.05 - accel * 0.03, 6, dt);
-    this.lookSway = damp(this.lookSway, telemetry.steering * (interior ? 1.8 : 0.4), 5, dt);
 
     if (mode === 'ORBIT') {
       this.orbitAngle += dt * 0.22;
@@ -105,15 +102,8 @@ export class CameraRig {
       if (mode === 'CHASE' || mode === 'FAR') this.avoidObstructions();
     }
 
-    if (mounted) {
-      this.targetPosition.addScaledVector(this.scratchRight, this.lookSway * 0.012);
-      this.targetPosition.addScaledVector(this.worldUp, this.pitchSway * 0.35);
-      this.lookTarget.addScaledVector(this.scratchRight, this.lookSway);
-      this.lookTarget.addScaledVector(this.worldUp, this.pitchSway * 4);
-    }
-
     const positionLambda = interior ? 42 : mode === 'HOOD' ? 28 : 7.5;
-    if (this.snapNextUpdate) this.smoothedPosition.copy(this.targetPosition);
+    if (this.snapNextUpdate || mounted) this.smoothedPosition.copy(this.targetPosition);
     else this.smoothedPosition.lerp(this.targetPosition, 1 - Math.exp(-positionLambda * dt));
     this.camera.position.copy(this.smoothedPosition);
     if ((mode === 'CHASE' || mode === 'FAR') && !this.reducedMotion) {
@@ -122,7 +112,7 @@ export class CameraRig {
       this.camera.position.addScaledVector(this.scratchRight, Math.sin(this.shakeTime * 1.7) * amplitude);
       this.camera.position.addScaledVector(this.worldUp, Math.cos(this.shakeTime * 2.3) * amplitude * 0.55);
     }
-    if (this.snapNextUpdate) {
+    if (this.snapNextUpdate || mounted) {
       this.camera.lookAt(this.lookTarget);
       this.snapNextUpdate = false;
     } else {

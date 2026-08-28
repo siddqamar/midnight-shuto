@@ -83,6 +83,12 @@ try {
   await page.waitForTimeout(250);
   if ((await page.locator('#camera-label').innerText()).trim() !== 'FAR') throw new Error('Camera cycle did not reach FAR mode.');
   await page.waitForTimeout(800);
+  await page.evaluate(() => window.__shutoReset?.());
+  await page.keyboard.down('w');
+  await page.waitForTimeout(1600);
+  await page.keyboard.up('w');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('F3');
   const sampleMountedCamera = async (expectedMode) => {
     await page.keyboard.press('c');
     await page.waitForFunction((mode) => document.querySelector('#camera-label')?.textContent === mode, expectedMode);
@@ -96,7 +102,8 @@ try {
         frames.push({
           x: camera.x - body.x,
           y: camera.y - body.y,
-          z: camera.z - body.z
+          z: camera.z - body.z,
+          trackingError: snapshot.feedback.mountedTrackingError
         });
       }
       return frames;
@@ -106,6 +113,9 @@ try {
       return Math.max(...values) - Math.min(...values);
     }));
     if (spread > 0.35) throw new Error(`${expectedMode} camera did not settle atomically. Relative-position spread: ${spread.toFixed(3)} m.`);
+    const maximumTrackingError = Math.max(...samples.map((sample) => sample.trackingError));
+    if (maximumTrackingError > 0.01) throw new Error(`${expectedMode} camera detached from its vehicle socket by ${maximumTrackingError.toFixed(3)} m.`);
+    await page.screenshot({ path: join(artifactsPath, `camera-${expectedMode.toLowerCase()}.png`) });
   };
   await sampleMountedCamera('HOOD');
   await sampleMountedCamera('DASH');

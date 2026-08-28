@@ -249,7 +249,8 @@ export class Game {
           cameraFov: this.camera.camera.fov,
           cameraIntensity: this.camera.feedbackIntensity,
           audioIntensity: this.audio.feedbackIntensity,
-          cameraPosition: { ...this.camera.camera.position }
+          cameraPosition: { ...this.camera.camera.position },
+          mountedTrackingError: this.camera.mountedTrackingError
         },
         body: {
           type: this.vehicle.body.type,

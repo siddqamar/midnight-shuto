@@ -118,8 +118,10 @@ export class PlayerVehicle {
   }
 
   syncVisual(dt: number): void {
-    this.group.position.set(this.body.position.x, this.body.position.y - 0.42, this.body.position.z);
-    this.group.quaternion.set(this.body.quaternion.x, this.body.quaternion.y, this.body.quaternion.z, this.body.quaternion.w);
+    const position = this.body.interpolatedPosition;
+    const quaternion = this.body.interpolatedQuaternion;
+    this.group.position.set(position.x, position.y - 0.42, position.z);
+    this.group.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
     this.wheelSpin += this.speedForward * dt / 0.38;
     this.steeringVisual = damp(this.steeringVisual, this.lastInput.steering * 0.5, 10, dt);
     // Wheel order from GLB: fl, fr, rl, rr — front axles are indices 0 and 1.
@@ -179,6 +181,10 @@ export class PlayerVehicle {
     this.body.velocity.setZero();
     this.body.angularVelocity.setZero();
     this.body.quaternion.setFromEuler(0, yaw, 0);
+    this.body.previousPosition.copy(this.body.position);
+    this.body.interpolatedPosition.copy(this.body.position);
+    this.body.previousQuaternion.copy(this.body.quaternion);
+    this.body.interpolatedQuaternion.copy(this.body.quaternion);
     this.body.wakeUp();
   }
 
