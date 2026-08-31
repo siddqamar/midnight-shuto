@@ -128,8 +128,8 @@ try {
   await page.locator('[data-action="quit-menu"]').click({ force: true });
   await page.locator('#main-menu').waitFor({ state: 'visible' });
   await page.locator('[data-panel="missions"][data-action="open-panel"]').click({ force: true });
-  await page.locator('.mission-card').first().click({ force: true });
-  await page.waitForTimeout(300);
+  await page.locator('.mission-card').first().click({ force: true, noWaitAfter: true });
+  await page.waitForFunction(() => document.querySelector('#mission-title')?.textContent === 'Bayline Rush');
   const missionTitle = (await page.locator('#mission-title').innerText()).trim();
   if (missionTitle !== 'Bayline Rush') throw new Error(`Mission did not start. Found: ${missionTitle}`);
   await page.screenshot({ path: join(artifactsPath, 'mission.png') });
