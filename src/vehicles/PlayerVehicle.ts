@@ -15,6 +15,13 @@ export class PlayerVehicle {
   private speedForward = 0;
   private slip = 0;
   private onImpact?: (strength: number) => void;
+  private forwardAxis = new CANNON.Vec3(0, 0, 1);
+  private rightAxis = new CANNON.Vec3(1, 0, 0);
+  private localForward = new CANNON.Vec3();
+  private localRight = new CANNON.Vec3();
+  private impulse = new CANNON.Vec3();
+  private steeringAxis = new THREE.Vector3(0, 0, 1);
+  private cameraMode?: CameraMode;
 
   constructor(world: CANNON.World, scene: THREE.Scene, spec: VehicleSpec, color: string) {
     this.spec = spec;
@@ -74,8 +81,8 @@ export class PlayerVehicle {
 
   prePhysics(dt: number, input: InputState, enabled: boolean): void {
     this.lastInput = enabled ? input : { throttle: 0, brake: 0, steering: 0, handbrake: true };
-    const localForward = this.body.quaternion.vmult(new CANNON.Vec3(0, 0, 1));
-    const localRight = this.body.quaternion.vmult(new CANNON.Vec3(1, 0, 0));
+    const localForward = this.body.quaternion.vmult(this.forwardAxis, this.localForward);
+    const localRight = this.body.quaternion.vmult(this.rightAxis, this.localRight);
     const velocity = this.body.velocity;
     this.speedForward = velocity.dot(localForward);
     const lateralSpeed = velocity.dot(localRight);
@@ -96,8 +103,8 @@ export class PlayerVehicle {
     const speedLimiter = drive > 0
       ? clamp((1 - normalizedSpeed) * 4, 0, 1)
       : clamp(1 - Math.pow(Math.abs(this.speedForward) / reverseSpeed, 2), 0, 1);
-    const impulse = localForward.scale(drive * this.spec.acceleration * this.body.mass * speedLimiter * dt);
-    this.body.applyImpulse(impulse);
+    localForward.scale(drive * this.spec.acceleration * this.body.mass * speedLimiter * dt, this.impulse);
+    this.body.applyImpulse(this.impulse);
 
     const grip = this.lastInput.handbrake ? 0.18 : this.spec.grip;
     const lateralCorrection = lateralSpeed * clamp(grip * dt * 8.5, 0, 0.92);
@@ -139,12 +146,14 @@ export class PlayerVehicle {
     const wheel = this.model.userData.steeringWheel;
     if (wheel) {
       wheel.quaternion.copy(this.model.userData.steeringBase);
-      wheel.rotateOnAxis(new THREE.Vector3(0, 0, 1), this.steeringVisual * 2.6);
+      wheel.rotateOnAxis(this.steeringAxis, this.steeringVisual * 2.6);
     }
     this.model.userData.cluster?.update(this.getTelemetry());
   }
 
   setCameraMode(mode: CameraMode): void {
+    if (mode === this.cameraMode) return;
+    this.cameraMode = mode;
     const interior = mode === 'DASH';
     for (const glass of this.model.userData.cabinGlass) glass.visible = !interior;
     const light = this.model.userData.interiorLight;
@@ -205,7 +214,7 @@ export class PlayerVehicle {
   }
 
   private applyLongitudinalBrake(strength: number, dt: number): void {
-    const forward = this.body.quaternion.vmult(new CANNON.Vec3(0, 0, 1));
+    const forward = this.body.quaternion.vmult(this.forwardAxis, this.localForward);
     const forwardSpeed = this.body.velocity.dot(forward);
     const deltaSpeed = Math.min(Math.abs(forwardSpeed), strength * 14.5 * dt);
     const direction = Math.sign(forwardSpeed);

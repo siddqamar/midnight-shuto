@@ -71,9 +71,15 @@ export class HUD {
   private mapCanvas: HTMLCanvasElement;
   private mapContext: CanvasRenderingContext2D;
   private speedElement: HTMLElement;
+  private speedDialElement: HTMLElement;
   private rpmElement: HTMLElement;
   private gearElement: HTMLElement;
   private missionPanel: HTMLElement;
+  private missionTitleElement: HTMLElement;
+  private missionObjectiveElement: HTMLElement;
+  private missionTimeElement: HTMLElement;
+  private missionProgressElement: HTMLElement;
+  private missionScoreElement: HTMLElement;
   private promptElement: HTMLElement;
   private countdownElement: HTMLElement;
   private debugElement: HTMLElement;
@@ -81,6 +87,11 @@ export class HUD {
   private speedEffectsElement: HTMLElement;
   private toastElement: HTMLElement;
   private lastSpeed = -1;
+  private lastRpm = -1;
+  private lastSpeedIntensity = -1;
+  private lastGear = '';
+  private lastCamera: CameraMode | '' = '';
+  private mapElapsed = Number.POSITIVE_INFINITY;
   private toastTimeout = 0;
   private mapExpanded = false;
   private debugVisible = false;
@@ -95,9 +106,15 @@ export class HUD {
     if (!context) throw new Error('Canvas 2D is unavailable.');
     this.mapContext = context;
     this.speedElement = this.require('#speed-value');
+    this.speedDialElement = this.require('#speed-dial');
     this.rpmElement = this.require('#rpm-bar');
     this.gearElement = this.require('#gear-value');
     this.missionPanel = this.require('#mission-tracker');
+    this.missionTitleElement = this.require('#mission-title');
+    this.missionObjectiveElement = this.require('#mission-objective');
+    this.missionTimeElement = this.require('#mission-time');
+    this.missionProgressElement = this.require('#mission-progress');
+    this.missionScoreElement = this.require('#mission-score');
     this.promptElement = this.require('#world-prompt');
     this.countdownElement = this.require('#countdown');
     this.debugElement = this.require('#debug-panel');
@@ -162,28 +179,46 @@ export class HUD {
     this.require('#hud').classList.toggle('soft-hidden', paused);
   }
 
-  update(telemetry: VehicleTelemetry, mission: MissionHUDState, camera: CameraMode): void {
+  update(telemetry: VehicleTelemetry, mission: MissionHUDState, camera: CameraMode, dt: number): void {
     const speed = Math.round(telemetry.speedKph);
     if (speed !== this.lastSpeed) {
       this.speedElement.textContent = String(speed).padStart(3, '0');
-      this.require('#speed-dial').style.setProperty('--speed', `${Math.min(1, speed / 260) * 270}deg`);
+      this.speedDialElement.style.setProperty('--speed', `${Math.min(1, speed / 260) * 270}deg`);
       this.lastSpeed = speed;
     }
-    this.rpmElement.style.setProperty('--rpm', `${Math.min(1, telemetry.rpm / 8500) * 100}%`);
-    this.gearElement.textContent = telemetry.gear;
-    this.speedEffectsElement.style.setProperty('--speed-intensity', speedEffectIntensity(telemetry.speedKph).toFixed(3));
-    this.cameraElement.textContent = camera;
+    const rpm = Math.round(Math.min(1, telemetry.rpm / 8500) * 200) / 2;
+    if (rpm !== this.lastRpm) {
+      this.rpmElement.style.setProperty('--rpm', `${rpm}%`);
+      this.lastRpm = rpm;
+    }
+    if (telemetry.gear !== this.lastGear) {
+      this.gearElement.textContent = telemetry.gear;
+      this.lastGear = telemetry.gear;
+    }
+    const speedIntensity = Math.round(speedEffectIntensity(telemetry.speedKph) * 100) / 100;
+    if (speedIntensity !== this.lastSpeedIntensity) {
+      this.speedEffectsElement.style.setProperty('--speed-intensity', speedIntensity.toFixed(2));
+      this.lastSpeedIntensity = speedIntensity;
+    }
+    if (camera !== this.lastCamera) {
+      this.cameraElement.textContent = camera;
+      this.lastCamera = camera;
+    }
     this.missionPanel.classList.toggle('active', mission.active);
-    this.require('#mission-title').textContent = mission.title;
-    this.require('#mission-objective').textContent = mission.objective;
-    this.require('#mission-time').textContent = mission.timer;
-    this.require('#mission-progress').textContent = mission.progress;
-    this.require('#mission-score').textContent = mission.score > 0 ? mission.score.toLocaleString() : '';
-    this.promptElement.textContent = mission.prompt ?? '';
+    this.setText(this.missionTitleElement, mission.title);
+    this.setText(this.missionObjectiveElement, mission.objective);
+    this.setText(this.missionTimeElement, mission.timer);
+    this.setText(this.missionProgressElement, mission.progress);
+    this.setText(this.missionScoreElement, mission.score > 0 ? mission.score.toLocaleString() : '');
+    this.setText(this.promptElement, mission.prompt ?? '');
     this.promptElement.classList.toggle('visible', Boolean(mission.prompt));
-    this.countdownElement.textContent = mission.countdown > 0 ? String(mission.countdown) : '';
+    this.setText(this.countdownElement, mission.countdown > 0 ? String(mission.countdown) : '');
     this.countdownElement.classList.toggle('visible', mission.countdown > 0);
-    this.drawMap(telemetry, mission.active);
+    this.mapElapsed += dt;
+    if (this.mapElapsed >= 0.1) {
+      this.drawMap(telemetry, mission.active);
+      this.mapElapsed = 0;
+    }
   }
 
   updateDebug(fps: number, drawCalls: number, physicsBodies: number, telemetry: VehicleTelemetry, traffic: number): void {
@@ -207,6 +242,7 @@ export class HUD {
   toggleMap(): void {
     this.mapExpanded = !this.mapExpanded;
     this.require('#minimap').classList.toggle('expanded', this.mapExpanded);
+    this.mapElapsed = Number.POSITIVE_INFINITY;
   }
 
   toast(message: string, tone: 'normal' | 'success' | 'danger' = 'normal'): void {
@@ -315,6 +351,10 @@ export class HUD {
     context.closePath();
     context.fill();
     context.restore();
+  }
+
+  private setText(element: HTMLElement, value: string): void {
+    if (element.textContent !== value) element.textContent = value;
   }
 
   private require<T extends HTMLElement = HTMLElement>(selector: string): T {

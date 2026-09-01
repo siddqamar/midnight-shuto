@@ -35,6 +35,9 @@ export class CameraRig {
   private scratchLook = new THREE.Vector3();
   private socketPosition = new THREE.Vector3();
   private socketLook = new THREE.Vector3();
+  private scratchDirection = new THREE.Vector3();
+  private rayOrigin = new CANNON.Vec3();
+  private rayDestination = new CANNON.Vec3();
   private snapNextUpdate = true;
 
   private rayResult = new CANNON.RaycastResult();
@@ -83,22 +86,23 @@ export class CameraRig {
 
     if (mode === 'ORBIT') {
       this.orbitAngle += dt * 0.22;
-      this.targetPosition.copy(this.target.position).add(new THREE.Vector3(Math.sin(this.orbitAngle) * 7.2, 2.7, Math.cos(this.orbitAngle) * 7.2));
-      this.lookTarget.copy(this.target.position).add(new THREE.Vector3(0, 0.82, 0));
+      this.targetPosition.copy(this.target.position);
+      this.targetPosition.add(this.scratchDirection.set(Math.sin(this.orbitAngle) * 7.2, 2.7, Math.cos(this.orbitAngle) * 7.2));
+      this.lookTarget.copy(this.target.position).addScaledVector(this.worldUp, 0.82);
     } else if (mode === 'FREE') {
-      this.targetPosition.copy(this.target.position).add(new THREE.Vector3(0, 7, 0));
-      const direction = new THREE.Vector3(
+      this.targetPosition.copy(this.target.position).add(this.scratchDirection.copy(this.worldUp).multiplyScalar(7));
+      this.scratchDirection.set(
         Math.sin(this.freeYaw) * Math.cos(this.freePitch),
         Math.sin(this.freePitch),
         Math.cos(this.freeYaw) * Math.cos(this.freePitch)
       );
-      this.lookTarget.copy(this.targetPosition).add(direction.multiplyScalar(20));
+      this.lookTarget.copy(this.targetPosition).add(this.scratchDirection.multiplyScalar(20));
     } else if (!this.applySocket(mode)) {
       const localOffset = offsets[mode];
       this.targetPosition.copy(localOffset).applyQuaternion(this.target.quaternion).add(this.target.position);
       const lookDistance = mode === 'CHASE' || mode === 'FAR' ? 7 + telemetry.speedKph * 0.035 : 14;
       const lookHeight = mode === 'CHASE' ? 1.05 : interior ? 0.92 : 0.72;
-      this.lookTarget.copy(this.target.position).add(this.scratchForward.clone().multiplyScalar(lookDistance)).add(this.worldUp.clone().multiplyScalar(lookHeight));
+      this.lookTarget.copy(this.target.position).addScaledVector(this.scratchForward, lookDistance).addScaledVector(this.worldUp, lookHeight);
       if (mode === 'CHASE' || mode === 'FAR') this.avoidObstructions();
     }
 
@@ -117,10 +121,11 @@ export class CameraRig {
       this.snapNextUpdate = false;
     } else {
       const currentDirection = this.scratchLook.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-      const desiredDirection = this.lookTarget.clone().sub(this.camera.position).normalize();
+      const desiredDirection = this.scratchDirection.copy(this.lookTarget).sub(this.camera.position).normalize();
       const lookLambda = interior ? 16 : 10;
       currentDirection.lerp(desiredDirection, 1 - Math.exp(-lookLambda * dt));
-      this.camera.lookAt(this.camera.position.clone().add(currentDirection));
+      this.scratchDirection.copy(this.camera.position).add(currentDirection);
+      this.camera.lookAt(this.scratchDirection);
     }
 
     const targetFov = mode === 'CHASE' || mode === 'FAR'
@@ -152,12 +157,12 @@ export class CameraRig {
   }
 
   private avoidObstructions(): void {
-    const origin = new CANNON.Vec3(this.target.position.x, this.target.position.y + 1.35, this.target.position.z);
-    const destination = new CANNON.Vec3(this.targetPosition.x, this.targetPosition.y, this.targetPosition.z);
+    this.rayOrigin.set(this.target.position.x, this.target.position.y + 1.35, this.target.position.z);
+    this.rayDestination.set(this.targetPosition.x, this.targetPosition.y, this.targetPosition.z);
     this.rayResult.reset();
     const hit = this.physics.raycastClosest(
-      origin,
-      destination,
+      this.rayOrigin,
+      this.rayDestination,
       { skipBackfaces: true, collisionFilterMask: 1 },
       this.rayResult
     );

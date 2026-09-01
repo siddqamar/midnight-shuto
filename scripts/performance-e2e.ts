@@ -55,8 +55,10 @@ try {
     await page.goto(`${origin}/?debug=1`, { waitUntil: 'networkidle' });
     await page.locator('[data-action="continue"]').click({ force: true });
     await page.locator('#hud').waitFor({ state: 'visible' });
+    await page.waitForTimeout(1200);
 
     const baseFeedback = await page.evaluate(() => window.__shutoDebug?.().feedback);
+    const basePerformance = await page.evaluate(() => window.__shutoDebug?.().performance);
     await page.keyboard.down('w');
     const startedAt = performance.now();
     let zeroToEighty = null;
@@ -67,11 +69,13 @@ try {
     let maximumAudioFeedback = 0;
     let feedbackMismatch = 0;
     let capturedHighSpeed = false;
+    const performanceSamples = [];
     for (let sample = 0; sample < 36; sample += 1) {
       await page.waitForTimeout(500);
       const snapshot = await page.evaluate(() => ({
         speed: Number(document.querySelector('#speed-value')?.textContent ?? 0),
         feedback: window.__shutoDebug?.().feedback,
+        performance: window.__shutoDebug?.().performance,
         visualIntensity: Number(getComputedStyle(document.querySelector('#speed-effects')).getPropertyValue('--speed-intensity'))
       }));
       const speed = snapshot.speed;
@@ -81,6 +85,7 @@ try {
       maximumCameraFov = Math.max(maximumCameraFov, Number(snapshot.feedback?.cameraFov ?? 0));
       maximumAudioFeedback = Math.max(maximumAudioFeedback, Number(snapshot.feedback?.audioIntensity ?? 0));
       feedbackMismatch = Math.max(feedbackMismatch, Math.abs(snapshot.visualIntensity - feedback));
+      if (sample >= 4 && snapshot.performance) performanceSamples.push(snapshot.performance);
       if (vehicle === 'shogun' && speed >= 150 && !capturedHighSpeed) {
         await page.screenshot({ path: join(artifactsPath, 'high-speed.png') });
         capturedHighSpeed = true;
@@ -149,6 +154,8 @@ try {
       maximumSpeed,
       zeroToEighty,
       baseFeedback,
+      basePerformance,
+      performanceSamples,
       lowSpeedFeedback,
       maximumFeedback,
       maximumCameraFov,
@@ -166,16 +173,32 @@ try {
   }
 
   console.table(results.map((result) => ({
+    ...(() => {
+      const sortedFps = result.performanceSamples.map((sample) => sample.fps).sort((a, b) => a - b);
+      return { 'median FPS': sortedFps[Math.floor(sortedFps.length / 2)].toFixed(0) };
+    })(),
     vehicle: result.vehicle,
     '0-80 km/h': result.zeroToEighty === null ? 'not reached' : `${result.zeroToEighty.toFixed(2)} s`,
     'maximum km/h': result.maximumSpeed,
     'speed effect': result.maximumFeedback.toFixed(2),
+    'maximum draws': Math.max(...result.performanceSamples.map((sample) => sample.drawCalls)),
     'braking': `${result.brakingSeconds.toFixed(2)} s`,
     'drift recovery': Number(result.recoverySnapshot?.telemetry.slip ?? 0).toFixed(2)
   })));
 
   const failures = [];
   for (const result of results) {
+    const sortedFps = result.performanceSamples.map((sample) => sample.fps).sort((a, b) => a - b);
+    const medianFps = sortedFps[Math.floor(sortedFps.length / 2)];
+    const maximumDrawCalls = Math.max(...result.performanceSamples.map((sample) => sample.drawCalls));
+    const maximumVisibleTraffic = Math.max(...result.performanceSamples.map((sample) => sample.trafficVisible));
+    const finalPerformance = result.performanceSamples.at(-1);
+    if (medianFps < 18) failures.push(`${result.vehicle} sustained only ${medianFps.toFixed(1)} median FPS`);
+    if (maximumDrawCalls > 420) failures.push(`${result.vehicle} exceeded the draw-call budget (${maximumDrawCalls})`);
+    if (maximumVisibleTraffic >= result.basePerformance.trafficTotal) failures.push(`${result.vehicle} did not cull distant traffic visuals`);
+    if (finalPerformance.sceneGeometries !== result.basePerformance.sceneGeometries) failures.push(`${result.vehicle} leaked scene geometries while driving`);
+    if (finalPerformance.sceneMaterials !== result.basePerformance.sceneMaterials) failures.push(`${result.vehicle} leaked scene materials while driving`);
+    if (finalPerformance.physicsBodies !== result.basePerformance.physicsBodies) failures.push(`${result.vehicle} changed the physics body count during free drive`);
     if (result.maximumSpeed < 120) failures.push(`${result.vehicle} reached only ${result.maximumSpeed} km/h`);
     if (result.zeroToEighty === null || result.zeroToEighty > 10) failures.push(`${result.vehicle} did not reach 80 km/h within 10 seconds`);
     if (result.lowSpeedFeedback > 0.01) failures.push(`${result.vehicle} activated high-speed feedback below 80 km/h`);
