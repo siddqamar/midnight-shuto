@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { VehicleId } from '../core/types';
 import { InstrumentCluster } from './InstrumentCluster';
+import { batchStaticMeshes } from './batchStaticMeshes';
 
 const VEHICLE_IDS: VehicleId[] = ['kaze', 'michi', 'raiden', 'shogun'];
 
@@ -358,6 +359,7 @@ export async function preloadVehicleModels(): Promise<void> {
       const gltf = await loader.loadAsync(modelUrl(id));
       const root = gltf.scene;
       root.name = `template_${id}`;
+      batchStaticMeshes(root);
       root.updateMatrixWorld(true);
       templates.set(id, root);
     }));
