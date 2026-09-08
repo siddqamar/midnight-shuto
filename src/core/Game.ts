@@ -230,11 +230,16 @@ export class Game {
     this.save.save();
   }
 
-  private setPixelRatio(): void {
+  private basePixelRatio(): number {
     const quality = this.save.data.settings.quality;
     const cap = quality === 'performance' ? 1 : quality === 'high' ? 2 : 1.5;
-    const nativeRatio = Math.min(window.devicePixelRatio, cap);
-    this.renderer.setPixelRatio(Math.max(0.65, nativeRatio * this.resolutionScale));
+    const maxPixels = quality === 'high' ? 2560 * 1440 : 1920 * 1080;
+    const pixelBudgetRatio = Math.sqrt(maxPixels / Math.max(1, window.innerWidth * window.innerHeight));
+    return Math.max(0.65, Math.min(window.devicePixelRatio, cap, pixelBudgetRatio));
+  }
+
+  private setPixelRatio(): void {
+    this.renderer.setPixelRatio(Math.max(0.65, this.basePixelRatio() * this.resolutionScale));
   }
 
   private exposeDebugSnapshot(): void {
@@ -366,11 +371,13 @@ export class Game {
 
   private adjustResolution(): void {
     if (this.state !== 'playing') return;
+    // Use the actual pixel ratio floor, including on high-DPI displays.
+    const minimumScale = 0.65 / this.basePixelRatio();
     if (this.fps < 50) {
       this.lowFpsIntervals += 1;
       this.highFpsIntervals = 0;
-      if (this.lowFpsIntervals < 2 || this.resolutionScale <= 0.7) return;
-      this.resolutionScale = Math.max(0.7, this.resolutionScale - 0.1);
+      if (this.lowFpsIntervals < 2 || this.resolutionScale <= minimumScale) return;
+      this.resolutionScale = Math.max(minimumScale, this.resolutionScale - 0.1);
       this.lowFpsIntervals = 0;
       this.setPixelRatio();
       return;

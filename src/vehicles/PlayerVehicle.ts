@@ -22,6 +22,7 @@ export class PlayerVehicle {
   private impulse = new CANNON.Vec3();
   private steeringAxis = new THREE.Vector3(0, 0, 1);
   private cameraMode?: CameraMode;
+  private clusterElapsed = 0;
 
   constructor(world: CANNON.World, scene: THREE.Scene, spec: VehicleSpec, color: string) {
     this.spec = spec;
@@ -67,6 +68,7 @@ export class PlayerVehicle {
     this.body.addShape(new CANNON.Box(new CANNON.Vec3(halfExtents.x, halfExtents.y, halfExtents.z)));
     this.body.updateMassProperties();
     this.body.updateBoundingRadius();
+    this.cameraMode = undefined;
   }
 
   setColor(color: string): void {
@@ -148,12 +150,20 @@ export class PlayerVehicle {
       wheel.quaternion.copy(this.model.userData.steeringBase);
       wheel.rotateOnAxis(this.steeringAxis, this.steeringVisual * 2.6);
     }
-    this.model.userData.cluster?.update(this.getTelemetry());
+    if (this.cameraMode === 'DASH' || this.cameraMode === 'FREE') {
+      this.clusterElapsed += dt;
+      if (this.clusterElapsed >= 1 / 30) {
+        this.model.userData.cluster?.update(this.getTelemetry());
+        this.clusterElapsed = 0;
+      }
+    }
   }
 
   setCameraMode(mode: CameraMode): void {
     if (mode === this.cameraMode) return;
     this.cameraMode = mode;
+    this.clusterElapsed = 0;
+    if (mode === 'DASH' || mode === 'FREE') this.model.userData.cluster?.update(this.getTelemetry());
     const interior = mode === 'DASH';
     for (const glass of this.model.userData.cabinGlass) glass.visible = !interior;
     const light = this.model.userData.interiorLight;
