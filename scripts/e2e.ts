@@ -2,13 +2,27 @@ import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { createServer } from 'node:net';
 import { chromium } from 'playwright-core';
+
+const findFreePort = async (): Promise<number> => {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve());
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Unable to determine the preview port.');
+  const port = address.port;
+  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  return port;
+};
 
 const root = new URL('../', import.meta.url);
 const artifacts = new URL('../e2e-artifacts/', import.meta.url);
 const artifactsPath = fileURLToPath(artifacts);
 const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const port = 4173;
+const port = await findFreePort();
 const origin = `http://127.0.0.1:${port}`;
 
 await mkdir(artifacts, { recursive: true });
