@@ -36,9 +36,15 @@ export class Game {
   private fpsElapsed = 0;
   private fpsFrames = 0;
   private lastInputThrottle = 0;
+  private resolutionScale = 1;
+  private lowFpsIntervals = 0;
+  private highFpsIntervals = 0;
 
   constructor() {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: this.save.data.settings.quality !== 'performance',
+      powerPreference: 'high-performance'
+    });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.03;
@@ -150,6 +156,9 @@ export class Game {
       setQuality: (quality) => {
         this.save.data.settings.quality = quality;
         this.renderer.shadowMap.enabled = quality !== 'performance';
+        this.resolutionScale = 1;
+        this.lowFpsIntervals = 0;
+        this.highFpsIntervals = 0;
         this.setPixelRatio();
         this.save.save();
         this.hud.toast('GRAPHICS PROFILE APPLIED');
@@ -224,10 +233,16 @@ export class Game {
     this.save.save();
   }
 
-  private setPixelRatio(): void {
+  private basePixelRatio(): number {
     const quality = this.save.data.settings.quality;
     const cap = quality === 'performance' ? 1 : quality === 'high' ? 2 : 1.5;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, cap));
+    const maxPixels = quality === 'high' ? 2560 * 1440 : 1920 * 1080;
+    const pixelBudgetRatio = Math.sqrt(maxPixels / Math.max(1, window.innerWidth * window.innerHeight));
+    return Math.max(0.65, Math.min(window.devicePixelRatio, cap, pixelBudgetRatio));
+  }
+
+  private setPixelRatio(): void {
+    this.renderer.setPixelRatio(Math.max(0.65, this.basePixelRatio() * this.resolutionScale));
   }
 
   private exposeDebugSnapshot(): void {
@@ -236,8 +251,10 @@ export class Game {
     debugWindow.__shutoReset = () => this.vehicle.reset(0, 0, 0);
     debugWindow.__shutoDebug = () => {
       const telemetry = this.vehicle.getTelemetry();
+      const sceneResources = this.countSceneResources();
       return {
         state: this.state,
+        vehicleId: this.vehicle.vehicleId,
         throttle: this.lastInputThrottle,
         telemetry: {
           speedKph: telemetry.speedKph,
@@ -265,6 +282,20 @@ export class Game {
         visual: {
           wheels: this.vehicle.getWheelWorldPositions()
         },
+        performance: {
+          fps: this.fps,
+          drawCalls: this.renderer.info.render.calls,
+          triangles: this.renderer.info.render.triangles,
+          geometries: this.renderer.info.memory.geometries,
+          textures: this.renderer.info.memory.textures,
+          sceneGeometries: sceneResources.geometries,
+          sceneMaterials: sceneResources.materials,
+          physicsBodies: this.physics.bodies.length,
+          trafficVisible: this.traffic.visibleCount,
+          trafficTotal: this.traffic.count,
+          pixelRatio: this.renderer.getPixelRatio(),
+          resolutionScale: this.resolutionScale
+        },
         contacts: this.physics.contacts
           .filter((contact) => contact.bi === this.vehicle.body || contact.bj === this.vehicle.body)
           .map((contact) => ({
@@ -276,8 +307,21 @@ export class Game {
     };
   }
 
+  private countSceneResources(): { geometries: number; materials: number } {
+    const geometries = new Set<number>();
+    const materials = new Set<number>();
+    this.scene.traverse((object) => {
+      if (!(object instanceof THREE.Mesh || object instanceof THREE.Points || object instanceof THREE.Sprite)) return;
+      if ('geometry' in object && object.geometry instanceof THREE.BufferGeometry) geometries.add(object.geometry.id);
+      const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of objectMaterials) materials.add(material.id);
+    });
+    return { geometries: geometries.size, materials: materials.size };
+  }
+
   private frame = (now: number): void => {
-    const dt = Math.min(0.05, Math.max(0.001, (now - this.previousTime) / 1000));
+    const rawDt = Math.max(0.001, (now - this.previousTime) / 1000);
+    const dt = Math.min(0.05, rawDt);
     this.previousTime = now;
     this.elapsed += dt;
     const controls = this.input.update(dt);
@@ -300,27 +344,59 @@ export class Game {
       score: 0,
       countdown: 0
     };
-    this.camera.update(dt, telemetry);
     this.vehicle.setCameraMode(this.camera.mode);
+    this.camera.update(dt, telemetry);
     this.city.update(this.camera.camera.position, this.elapsed);
     if (this.state === 'playing') {
-      this.hud.update(telemetry, missionState, this.camera.mode);
+      this.hud.update(telemetry, missionState, this.camera.mode, dt);
       this.audio.update(dt, telemetry, this.lastInputThrottle, this.save.data.settings.weather);
       this.save.tick(dt, telemetry.speedKph);
     }
 
     this.renderer.render(this.scene, this.camera.camera);
-    this.updatePerformance(dt, telemetry);
+    this.updatePerformance(rawDt, telemetry);
   };
 
-  private updatePerformance(dt: number, telemetry: ReturnType<PlayerVehicle['getTelemetry']>): void {
-    this.fpsElapsed += dt;
+  private updatePerformance(frameTime: number, telemetry: ReturnType<PlayerVehicle['getTelemetry']>): void {
+    if (document.hidden || frameTime > 0.5) {
+      this.fpsElapsed = 0;
+      this.fpsFrames = 0;
+      return;
+    }
+    this.fpsElapsed += frameTime;
     this.fpsFrames += 1;
-    if (this.fpsElapsed < 0.4) return;
+    if (this.fpsElapsed < 1) return;
     this.fps = this.fpsFrames / this.fpsElapsed;
     this.fpsElapsed = 0;
     this.fpsFrames = 0;
-    this.hud.updateDebug(this.fps, this.renderer.info.render.calls, this.physics.bodies.length, telemetry, this.traffic.count);
+    this.adjustResolution();
+    this.hud.updateDebug(this.fps, this.renderer.info.render.calls, this.physics.bodies.length, telemetry, this.traffic.visibleCount);
+  }
+
+  private adjustResolution(): void {
+    if (this.state !== 'playing') return;
+    // Use the actual pixel ratio floor, including on high-DPI displays.
+    const minimumScale = 0.65 / this.basePixelRatio();
+    if (this.fps < 50) {
+      this.lowFpsIntervals += 1;
+      this.highFpsIntervals = 0;
+      if (this.lowFpsIntervals < 2 || this.resolutionScale <= minimumScale) return;
+      this.resolutionScale = Math.max(minimumScale, this.resolutionScale - 0.1);
+      this.lowFpsIntervals = 0;
+      this.setPixelRatio();
+      return;
+    }
+    if (this.fps >= 58) {
+      this.highFpsIntervals += 1;
+      this.lowFpsIntervals = 0;
+      if (this.highFpsIntervals < 5 || this.resolutionScale >= 1) return;
+      this.resolutionScale = Math.min(1, this.resolutionScale + 0.05);
+      this.highFpsIntervals = 0;
+      this.setPixelRatio();
+      return;
+    }
+    this.lowFpsIntervals = 0;
+    this.highFpsIntervals = 0;
   }
 
   private resize = (): void => {

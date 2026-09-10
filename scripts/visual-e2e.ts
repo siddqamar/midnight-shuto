@@ -2,13 +2,27 @@ import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { createServer } from 'node:net';
 import { chromium } from 'playwright-core';
+
+const findFreePort = async (): Promise<number> => {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve());
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Unable to determine the preview port.');
+  const port = address.port;
+  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  return port;
+};
 
 const root = new URL('../', import.meta.url);
 const artifacts = new URL('../e2e-artifacts/', import.meta.url);
 const artifactsPath = fileURLToPath(artifacts);
 const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const port = 4175;
+const port = await findFreePort();
 const origin = `http://127.0.0.1:${port}`;
 const vehicles = ['kaze', 'michi', 'raiden', 'shogun'];
 
@@ -60,7 +74,8 @@ try {
   });
 
   const errors = [];
-  const desktop = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  const desktopContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  const desktop = await desktopContext.newPage();
   watchBrowserErrors(desktop, errors);
   await seedSave(desktop);
   await desktop.goto(origin, { waitUntil: 'networkidle' });
@@ -71,9 +86,10 @@ try {
   await desktop.screenshot({ path: join(artifactsPath, 'garage-desktop.png') });
   await desktop.locator('[data-action="select-vehicle"][data-id="shogun"]').click();
   if (!await desktop.locator('[data-id="shogun"]').evaluate((card) => card.classList.contains('selected'))) throw new Error('Vehicle selection did not update the active model.');
-  await desktop.close();
+  await desktopContext.close();
 
-  const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
+  const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
+  const mobile = await mobileContext.newPage();
   watchBrowserErrors(mobile, errors);
   await seedSave(mobile, 'shogun');
   await mobile.goto(origin, { waitUntil: 'networkidle' });
@@ -90,13 +106,15 @@ try {
   const mobileSpeed = Number(await mobile.locator('#speed-value').textContent());
   if (mobileSpeed < 5) throw new Error(`Mobile vehicle did not accelerate: ${mobileSpeed} km/h.`);
   await mobile.screenshot({ path: join(artifactsPath, 'drive-mobile.png') });
-  await mobile.close();
+  await mobileContext.close();
 
   for (const vehicle of vehicles) {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
+    const page = await context.newPage();
     watchBrowserErrors(page, errors);
     await seedSave(page, vehicle);
     await page.goto(`${origin}/?debug=1`, { waitUntil: 'networkidle' });
+    await page.locator('h1').waitFor({ state: 'visible' });
     await page.locator('[data-action="continue"]').click({ force: true });
     await page.locator('#hud').waitFor({ state: 'visible' });
     for (let cycle = 0; cycle < 4; cycle += 1) await page.keyboard.press('c');
@@ -111,7 +129,7 @@ try {
       throw new Error(`${vehicle} wheels are not distributed across both axles: ${JSON.stringify(wheels)}`);
     }
     await page.screenshot({ path: join(artifactsPath, `vehicle-${vehicle}.png`) });
-    await page.close();
+    await context.close();
   }
 
   if (errors.length > 0) throw new Error(`Browser errors:\n${errors.join('\n')}`);

@@ -23,6 +23,7 @@ export class InstrumentCluster {
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.anisotropy = 4;
     this.texture.minFilter = THREE.LinearFilter;
+    this.texture.generateMipmaps = false;
     this.texture.magFilter = THREE.LinearFilter;
 
     const material = new THREE.MeshBasicMaterial({
