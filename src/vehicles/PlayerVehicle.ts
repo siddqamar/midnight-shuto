@@ -1,6 +1,6 @@
 import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
-import type { CameraMode, InputState, VehicleSpec, VehicleTelemetry } from '../core/types';
+import type { CameraMode, InputState, VehicleId, VehicleSpec, VehicleTelemetry } from '../core/types';
 import { clamp, damp } from '../utils/math';
 import { createCarModel, type CarModel } from './CarModel';
 
@@ -55,6 +55,10 @@ export class PlayerVehicle {
 
   setImpactHandler(callback: (strength: number) => void): void {
     this.onImpact = callback;
+  }
+
+  get vehicleId(): VehicleId {
+    return this.spec.id;
   }
 
   setSpec(spec: VehicleSpec, color: string): void {

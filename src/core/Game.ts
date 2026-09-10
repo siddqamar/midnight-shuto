@@ -254,6 +254,7 @@ export class Game {
       const sceneResources = this.countSceneResources();
       return {
         state: this.state,
+        vehicleId: this.vehicle.vehicleId,
         throttle: this.lastInputThrottle,
         telemetry: {
           speedKph: telemetry.speedKph,

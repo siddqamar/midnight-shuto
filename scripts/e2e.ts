@@ -84,6 +84,7 @@ try {
   if ((await page.locator('#camera-label').innerText()).trim() !== 'FAR') throw new Error('Camera cycle did not reach FAR mode.');
   await page.waitForTimeout(800);
   await page.evaluate(() => window.__shutoReset?.());
+  const initialVehicleId = await page.evaluate(() => window.__shutoDebug?.().vehicleId);
   await page.keyboard.down('w');
   await page.waitForTimeout(1600);
   await page.keyboard.up('w');
@@ -96,14 +97,15 @@ try {
       const frames = [];
       for (let frame = 0; frame < 24; frame += 1) {
         await new Promise((resolve) => requestAnimationFrame(resolve));
-        const snapshot = window.__shutoDebug?.();
-        const camera = snapshot?.feedback.cameraPosition;
-        const body = snapshot?.body.position;
+      const snapshot = window.__shutoDebug?.();
+      const camera = snapshot?.feedback.cameraPosition;
+      const body = snapshot?.body.position;
         frames.push({
           x: camera.x - body.x,
           y: camera.y - body.y,
           z: camera.z - body.z,
-          trackingError: snapshot.feedback.mountedTrackingError
+          trackingError: snapshot.feedback.mountedTrackingError,
+          vehicleId: snapshot.vehicleId
         });
       }
       return frames;
@@ -115,6 +117,7 @@ try {
     if (spread > 0.35) throw new Error(`${expectedMode} camera did not settle atomically. Relative-position spread: ${spread.toFixed(3)} m.`);
     const maximumTrackingError = Math.max(...samples.map((sample) => sample.trackingError));
     if (maximumTrackingError > 0.01) throw new Error(`${expectedMode} camera detached from its vehicle socket by ${maximumTrackingError.toFixed(3)} m.`);
+    if (samples.some((sample) => sample.vehicleId !== initialVehicleId)) throw new Error(`${expectedMode} camera changed the active vehicle.`);
     await page.screenshot({ path: join(artifactsPath, `camera-${expectedMode.toLowerCase()}.png`) });
   };
   await sampleMountedCamera('HOOD');
