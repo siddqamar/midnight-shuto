@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-const CACHE_NAME = 'midnight-shuto-v2';
+const CACHE_NAME = 'midnight-shuto-v3';
 const serviceWorker = self as unknown as ServiceWorkerGlobalScope;
 const ROOT_URL = new URL('./', serviceWorker.location.href);
 const EXTRA_ASSETS = [
