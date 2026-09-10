@@ -39,8 +39,9 @@ export class CameraRig {
   private rayOrigin = new CANNON.Vec3();
   private rayDestination = new CANNON.Vec3();
   private snapNextUpdate = true;
-
   private rayResult = new CANNON.RaycastResult();
+  private projectionFov = 62;
+  private projectionNear = 0.08;
 
   constructor(private target: THREE.Object3D, private physics: CANNON.World) {
     this.camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.05, 1500);
@@ -133,9 +134,15 @@ export class CameraRig {
       : mode === 'DASH'
         ? 66 + this.speedEffectLevel * 3.5
         : 70 + this.speedEffectLevel * 4;
-    this.camera.fov = damp(this.camera.fov, targetFov, 4, dt);
-    this.camera.near = interior ? 0.04 : 0.08;
-    this.camera.updateProjectionMatrix();
+    const nextFov = damp(this.camera.fov, targetFov, 4, dt);
+    const nextNear = interior ? 0.04 : 0.08;
+    if (Math.abs(nextFov - this.projectionFov) > 0.001 || nextNear !== this.projectionNear) {
+      this.camera.fov = nextFov;
+      this.camera.near = nextNear;
+      this.camera.updateProjectionMatrix();
+      this.projectionFov = nextFov;
+      this.projectionNear = nextNear;
+    }
   }
 
   resize(width: number, height: number): void {

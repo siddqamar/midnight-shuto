@@ -41,7 +41,10 @@ export class Game {
   private highFpsIntervals = 0;
 
   constructor() {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: this.save.data.settings.quality !== 'performance',
+      powerPreference: 'high-performance'
+    });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.03;
@@ -340,8 +343,8 @@ export class Game {
       score: 0,
       countdown: 0
     };
-    this.camera.update(dt, telemetry);
     this.vehicle.setCameraMode(this.camera.mode);
+    this.camera.update(dt, telemetry);
     this.city.update(this.camera.camera.position, this.elapsed);
     if (this.state === 'playing') {
       this.hud.update(telemetry, missionState, this.camera.mode, dt);
