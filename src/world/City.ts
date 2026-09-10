@@ -180,8 +180,10 @@ export class City {
   }
 
   update(cameraPosition: THREE.Vector3, elapsed: number): void {
-    this.sun.position.set(cameraPosition.x - 180, 340, cameraPosition.z - 130);
-    this.sun.target.position.set(cameraPosition.x, 0, cameraPosition.z);
+    if (this.sun.castShadow) {
+      this.sun.position.set(cameraPosition.x - 180, 340, cameraPosition.z - 130);
+      this.sun.target.position.set(cameraPosition.x, 0, cameraPosition.z);
+    }
     if (!this.rain.visible) return;
     this.rain.position.set(cameraPosition.x, 0, cameraPosition.z);
     for (let index = 1; index < this.rainPositions.length; index += 3) {
