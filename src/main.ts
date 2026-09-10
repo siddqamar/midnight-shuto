@@ -3,9 +3,7 @@ import { Game } from './core/Game';
 import { preloadVehicleModels } from './vehicles/modelRegistry';
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => {
-    void navigator.serviceWorker.register(new URL('sw.js', document.baseURI).href);
-  });
+  void navigator.serviceWorker.register(new URL('sw.js', document.baseURI).href);
 }
 
 async function boot(): Promise<void> {

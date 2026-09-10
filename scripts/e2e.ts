@@ -134,7 +134,9 @@ try {
   if (missionTitle !== 'Bayline Rush') throw new Error(`Mission did not start. Found: ${missionTitle}`);
   await page.screenshot({ path: join(artifactsPath, 'mission.png') });
 
-  await page.waitForFunction(() => navigator.serviceWorker.controller !== null, undefined, { timeout: 10000 });
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
   const cacheSnapshot = await page.evaluate(async () => {
     const keys = await caches.keys();
     const entries = await Promise.all(keys.map(async (key) => ({
