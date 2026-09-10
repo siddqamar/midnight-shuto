@@ -226,7 +226,8 @@ export class PlayerVehicle {
   private applyLongitudinalBrake(strength: number, dt: number): void {
     const forward = this.body.quaternion.vmult(this.forwardAxis, this.localForward);
     const forwardSpeed = this.body.velocity.dot(forward);
-    const deltaSpeed = Math.min(Math.abs(forwardSpeed), strength * 14.5 * dt);
+    const speedBonus = Math.max(0, Math.abs(forwardSpeed) - 24) * 0.35;
+    const deltaSpeed = Math.min(Math.abs(forwardSpeed), strength * (14.5 + speedBonus) * dt);
     const direction = Math.sign(forwardSpeed);
     this.body.velocity.x -= forward.x * deltaSpeed * direction;
     this.body.velocity.z -= forward.z * deltaSpeed * direction;
